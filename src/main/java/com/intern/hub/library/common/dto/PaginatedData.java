@@ -14,7 +14,7 @@ import static lombok.AccessLevel.PRIVATE;
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level = PRIVATE)
-public class Pageable <T> {
+public class PaginatedData<T> {
 
   Collection<T> items;
 
@@ -22,8 +22,13 @@ public class Pageable <T> {
 
   int totalPages;
 
-  public static <T> Pageable<T> empty() {
-    return Pageable.<T>builder()
+  /**
+   * Creates an empty PaginatedData instance.
+   * @return an empty PaginatedData
+   * @param <T> the type of the data payload
+   */
+  public static <T> PaginatedData<T> empty() {
+    return PaginatedData.<T>builder()
         .items(List.of())
         .totalItems(0)
         .totalPages(0)

@@ -18,6 +18,7 @@ A shared Java library providing common utilities, exception handling, and contex
   - [Snowflake ID Generator](#snowflake-id-generator)
   - [Utility Classes](#utility-classes)
   - [Standard API Response](#standard-api-response)
+  - [Pagination Model](#pagination-model)
 - [Configuration](#configuration)
 - [Usage Examples](#usage-examples)
 - [API Documentation](#api-documentation)
@@ -345,6 +346,184 @@ ResponseApi.ok(data, ResponseMetadata.fromRequestId());
 
 // Full control over all fields
 ResponseApi.of(status, data, metaData);
+```
+
+### Pagination Model
+
+The library provides a generic `PaginatedData<T>` class for handling paginated data responses.
+
+#### Structure
+
+```java
+public class PaginatedData<T> {
+    Collection<T> items;      // The collection of items in the current page
+    long totalItems;          // Total number of items across all pages
+    int totalPages;           // Total number of pages
+}
+```
+
+#### Creating Paginated Responses
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    @GetMapping
+    public ResponseApi<PaginatedData<User>> getUsers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        
+        // Fetch paginated data from service
+        List<User> users = userService.findAll(page, size);
+        long totalItems = userService.countAll();
+        int totalPages = (int) Math.ceil((double) totalItems / size);
+        
+        // Build pageable response
+        PaginatedData<User> pageable = PaginatedData.<User>builder()
+            .items(users)
+            .totalItems(totalItems)
+            .totalPages(totalPages)
+            .build();
+        
+        return ResponseApi.ok(pageable);
+    }
+}
+```
+
+#### Empty PaginatedData
+
+For empty results, use the convenient factory method:
+
+```java
+@GetMapping("/users/search")
+public ResponseApi<PaginatedData<User>> searchUsers(@RequestParam String query) {
+    List<User> users = userService.search(query);
+    
+    if (users.isEmpty()) {
+        return ResponseApi.ok(PaginatedData.empty());
+    }
+    
+    // Build pageable with results...
+}
+```
+
+#### Response Format
+
+A typical paginated API response looks like:
+
+```json
+{
+  "status": null,
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "id": 2,
+        "name": "Jane Smith",
+        "email": "jane@example.com"
+      }
+    ],
+    "totalItems": 42,
+    "totalPages": 5
+  },
+  "metaData": {
+    "requestId": "abc-123",
+    "traceId": "xyz-789",
+    "signature": null,
+    "timestamp": 1704067200000
+  }
+}
+```
+
+For empty results:
+
+```json
+{
+  "status": null,
+  "data": {
+    "items": [],
+    "totalItems": 0,
+    "totalPages": 0
+  },
+  "metaData": null
+}
+```
+
+#### Service Layer Example
+
+```java
+@Service
+public class UserService {
+    
+    private final UserRepository userRepository;
+    
+    public PaginatedData<User> findAllPaginated(int page, int size) {
+        // Validate parameters
+        if (page < 0 || size <= 0) {
+            throw new BadRequestException("invalid.pagination", 
+                "Page must be >= 0 and size must be > 0");
+        }
+        
+        // Fetch data using Spring Data JPA or other ORM
+        Page<User> userPage = userRepository.findAll(
+            PageRequest.of(page, size, Sort.by("createdAt").descending())
+        );
+        
+        // Convert to library's PaginatedData
+        return PaginatedData.<User>builder()
+            .items(userPage.getContent())
+            .totalItems(userPage.getTotalElements())
+            .totalPages(userPage.getTotalPages())
+            .build();
+    }
+}
+```
+
+#### Controller with Pagination and Permissions
+
+```java
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+
+    private final OrderService orderService;
+
+    @GetMapping
+    @HasPermission(resource = "order", action = "read", scope = Scope.TENANT)
+    public ResponseApi<PaginatedData<Order>> listOrders(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String status) {
+        
+        PaginatedData<Order> orders = orderService.findAllPaginated(page, size, status);
+        return ResponseApi.ok(orders);
+    }
+}
+```
+
+#### Using with Different Collection Types
+
+The `PaginatedData<T>` class accepts any `Collection<T>`, so you can use `List`, `Set`, or other collection types:
+
+```java
+// With List
+PaginatedData<User> pageableList = PaginatedData.<User>builder()
+    .items(List.of(user1, user2))
+    .totalItems(2)
+    .totalPages(1)
+    .build();
+
+// With Set
+PaginatedData<String> pageableSet = PaginatedData.<String>builder()
+    .items(Set.of("tag1", "tag2", "tag3"))
+    .totalItems(3)
+    .totalPages(1)
+    .build();
 ```
 
 ## Configuration
