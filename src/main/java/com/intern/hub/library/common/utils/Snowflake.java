@@ -12,6 +12,8 @@ import java.time.ZoneOffset;
  */
 public class Snowflake {
 
+  // 1 ms can generate 4096 ids per machine
+
   private static final long MACHINE_ID_BITS = 10;
   private static final long SEQUENCE_BITS = 12;
   private static final long TIME_STAMP_BITS = 41;

@@ -58,7 +58,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:1.0.1")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:1.0.2")
 }
 ```
 

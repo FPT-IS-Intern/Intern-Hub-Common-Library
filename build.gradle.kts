@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "1.0.1"
+version = "1.0.2"
 description = "common"
 
 java {
@@ -35,7 +35,7 @@ dependencies {
     implementation("org.springframework:spring-web:7.0.2")
 
     api("tools.jackson.core:jackson-databind:3.0.3")
-    implementation("org.springframework.boot:spring-boot-starter-aop:3.5.9")
+    implementation("org.springframework.boot:spring-boot-starter-aop:3.5.10")
 }
 
 publishing {
