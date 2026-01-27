@@ -6,6 +6,20 @@ A shared Java library providing common utilities, exception handling, and contex
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.1-green.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
+> [!CAUTION]
+>
+> ## Breaking Changes in v2.0.0
+>
+> The following classes have been **moved to the [Security Library](../security)**:
+>
+> - `HasPermission` → `com.intern.hub.starter.security.annotation`
+> - `HasPermissionAspect` → `com.intern.hub.starter.security.annotation.aspect`
+> - `AuthContext` → `com.intern.hub.starter.security.context`
+> - `AuthContextHolder` → `com.intern.hub.starter.security.context`
+> - `Scope` → `com.intern.hub.starter.security.dto`
+>
+> **Migration**: If you use permission-based access control or authentication context, add the security library dependency and update your imports.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -13,13 +27,14 @@ A shared Java library providing common utilities, exception handling, and contex
 - [Installation](#installation)
 - [Features](#features)
   - [Global Exception Handling](#global-exception-handling)
-  - [Permission-Based Access Control](#permission-based-access-control)
-  - [Context Management](#context-management)
+  - [Request Context Management](#request-context-management)
   - [Snowflake ID Generator](#snowflake-id-generator)
   - [Utility Classes](#utility-classes)
   - [Standard API Response](#standard-api-response)
   - [Pagination Model](#pagination-model)
 - [Configuration](#configuration)
+  - [Disabling Auto-Configurations](#disabling-auto-configurations)
+  - [Using Request Context](#using-request-context)
 - [Usage Examples](#usage-examples)
 - [API Documentation](#api-documentation)
 - [Contributing](#contributing)
@@ -30,8 +45,7 @@ A shared Java library providing common utilities, exception handling, and contex
 This library provides essential building blocks for building robust Spring Boot applications, including:
 
 - **Global Exception Handling**: Centralized exception handling with standardized API responses
-- **Permission-Based Authorization**: Declarative permission checking using annotations
-- **Context Management**: Thread-safe request and authentication context using Java's `ScopedValue`
+- **Request Context Management**: Thread-safe request context using Java's `ScopedValue`
 - **Snowflake ID Generator**: Distributed unique ID generation
 - **Utility Classes**: Date/time helpers and random generators
 
@@ -58,7 +72,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:1.0.2")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.0")
 }
 ```
 
@@ -89,15 +103,15 @@ public class MyApplication {
 
 #### Supported Exceptions
 
-| Exception | HTTP Status | Default Code |
-|-----------|-------------|--------------|
-| `BadRequestException` | 400 | `bad.request` |
-| `UnauthorizeException` | 401 | `unauthorized` |
-| `ForbiddenException` | 403 | `forbidden` |
-| `NotFoundException` | 404 | `resource.not.found` |
-| `ConflictDataException` | 409 | `conflict.data` |
-| `TooManyRequestException` | 429 | `too.many.requests` |
-| `InternalErrorException` | 500 | `internal.server.error` |
+| Exception                 | HTTP Status | Default Code            |
+| ------------------------- | ----------- | ----------------------- |
+| `BadRequestException`     | 400         | `bad.request`           |
+| `UnauthorizeException`    | 401         | `unauthorized`          |
+| `ForbiddenException`      | 403         | `forbidden`             |
+| `NotFoundException`       | 404         | `resource.not.found`    |
+| `ConflictDataException`   | 409         | `conflict.data`         |
+| `TooManyRequestException` | 429         | `too.many.requests`     |
+| `InternalErrorException`  | 500         | `internal.server.error` |
 
 #### Throwing Exceptions
 
@@ -109,44 +123,9 @@ throw new NotFoundException("user.not.found");
 throw new BadRequestException("invalid.email", "Email format is invalid");
 ```
 
-### Permission-Based Access Control
-
-Use the `@HasPermission` annotation to declaratively check permissions on controller methods:
-
-```java
-@RestController
-@RequestMapping("/api/users")
-public class UserController {
-
-    @GetMapping("/{id}")
-    @HasPermission(resource = "user", action = "read", scope = Scope.OWN)
-    public User getUser(@PathVariable Long id) {
-        // Only users with "user:read" permission and at least OWN scope can access
-        return userService.findById(id);
-    }
-
-    @DeleteMapping("/{id}")
-    @HasPermission(resource = "user", action = "delete", scope = Scope.ALL)
-    public void deleteUser(@PathVariable Long id) {
-        // Only admins with ALL scope can delete users
-        userService.delete(id);
-    }
-}
-```
-
-#### Scope Levels
-
-| Scope | Value | Description |
-|-------|-------|-------------|
-| `OWN` | 1 | User can only access their own resources |
-| `TENANT` | 2 | User can access resources within their organization |
-| `ALL` | 3 | User can access all resources (admin level) |
-
-### Context Management
+### Request Context Management
 
 The library provides thread-safe context holders using Java's `ScopedValue` for virtual thread compatibility.
-
-#### Request Context
 
 ```java
 // Setting the context (typically in a filter)
@@ -164,25 +143,6 @@ ScopedValue.runWhere(RequestContextHolder.REQUEST_CONTEXT, requestContext, () ->
 });
 ```
 
-#### Authentication Context
-
-```java
-// Setting the auth context (typically in an authentication filter)
-Map<String, Scope> permissions = Map.of(
-    "user:read", Scope.OWN,
-    "user:write", Scope.OWN,
-    "order:read", Scope.TENANT
-);
-
-AuthContext authContext = new AuthContext(userId, permissions);
-
-ScopedValue.runWhere(AuthContextHolder.AUTH_CONTEXT, authContext, () -> {
-    // Auth context is available throughout this scope
-    AuthContext ctx = AuthContextHolder.get().orElseThrow();
-    System.out.println("User ID: " + ctx.userId());
-});
-```
-
 ### Snowflake ID Generator
 
 Generate unique 64-bit IDs suitable for distributed systems.
@@ -193,7 +153,7 @@ The Snowflake generator is auto-configured. Configure it in `application.yml`:
 
 ```yaml
 snowflake:
-  machine-id: 1  # Unique ID for each instance (0-1023)
+  machine-id: 1 # Unique ID for each instance (0-1023)
 ```
 
 #### Usage
@@ -201,21 +161,21 @@ snowflake:
 ```java
 @Service
 public class MyService {
-    
+
     private final Snowflake snowflake;
-    
+
     public MyService(Snowflake snowflake) {
         this.snowflake = snowflake;
     }
-    
+
     public Long generateId() {
         return snowflake.next();
     }
-    
+
     public long getTimestamp(long id) {
         return snowflake.extractTimestamp(id);
     }
-    
+
     public long getMachineId(long id) {
         return snowflake.extractMachineId(id);
     }
@@ -322,7 +282,7 @@ public class UserController {
         // For success, just return the data
         return ResponseApi.ok(user);
     }
-    
+
     @PostMapping("/users")
     public ResponseApi<User> createUser(@RequestBody CreateUserRequest request) {
         // For errors, throw an exception - the global handler will format the response
@@ -373,19 +333,19 @@ public class UserController {
     public ResponseApi<PaginatedData<User>> getUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        
+
         // Fetch paginated data from service
         List<User> users = userService.findAll(page, size);
         long totalItems = userService.countAll();
         int totalPages = (int) Math.ceil((double) totalItems / size);
-        
+
         // Build pageable response
         PaginatedData<User> pageable = PaginatedData.<User>builder()
             .items(users)
             .totalItems(totalItems)
             .totalPages(totalPages)
             .build();
-        
+
         return ResponseApi.ok(pageable);
     }
 }
@@ -399,11 +359,11 @@ For empty results, use the convenient factory method:
 @GetMapping("/users/search")
 public ResponseApi<PaginatedData<User>> searchUsers(@RequestParam String query) {
     List<User> users = userService.search(query);
-    
+
     if (users.isEmpty()) {
         return ResponseApi.ok(PaginatedData.empty());
     }
-    
+
     // Build pageable with results...
 }
 ```
@@ -459,21 +419,21 @@ For empty results:
 ```java
 @Service
 public class UserService {
-    
+
     private final UserRepository userRepository;
-    
+
     public PaginatedData<User> findAllPaginated(int page, int size) {
         // Validate parameters
         if (page < 0 || size <= 0) {
-            throw new BadRequestException("invalid.pagination", 
+            throw new BadRequestException("invalid.pagination",
                 "Page must be >= 0 and size must be > 0");
         }
-        
+
         // Fetch data using Spring Data JPA or other ORM
         Page<User> userPage = userRepository.findAll(
             PageRequest.of(page, size, Sort.by("createdAt").descending())
         );
-        
+
         // Convert to library's PaginatedData
         return PaginatedData.<User>builder()
             .items(userPage.getContent())
@@ -494,12 +454,11 @@ public class OrderController {
     private final OrderService orderService;
 
     @GetMapping
-    @HasPermission(resource = "order", action = "read", scope = Scope.TENANT)
     public ResponseApi<PaginatedData<Order>> listOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String status) {
-        
+
         PaginatedData<Order> orders = orderService.findAllPaginated(page, size, status);
         return ResponseApi.ok(orders);
     }
@@ -533,7 +492,8 @@ PaginatedData<String> pageableSet = PaginatedData.<String>builder()
 ```yaml
 # Snowflake configuration
 snowflake:
-  machine-id: 1  # Required for distributed deployments (0-1023)
+  machine-id: 1 # Required for distributed deployments (0-1023)
+
 
 # JVM timezone (for DateTimeHelper)
 # Set via: -Duser.timezone=America/New_York
@@ -544,10 +504,173 @@ snowflake:
 The library registers the following auto-configurations:
 
 - `SnowflakeAutoConfiguration` - Automatically creates a `Snowflake` bean
+- `ContextAutoConfiguration` - Automatically registers a `ContextFilter` for Request Context management (servlet applications only)
 
 To see the auto-configuration file location:
+
 ```
 src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+```
+
+### Disabling Auto-Configurations
+
+You can disable specific auto-configurations if you need custom behavior or want to avoid conflicts.
+
+#### Using `application.yml`
+
+```yaml
+spring:
+  autoconfigure:
+    exclude:
+      - com.intern.hub.library.common.autoconfig.snowflake.SnowflakeAutoConfiguration
+      - com.intern.hub.library.common.autoconfig.context.ContextAutoConfiguration
+```
+
+#### Using `@SpringBootApplication` Annotation
+
+```java
+@SpringBootApplication(exclude = {
+    SnowflakeAutoConfiguration.class,
+    ContextAutoConfiguration.class
+})
+public class MyApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MyApplication.class, args);
+    }
+}
+```
+
+#### Available Auto-Configurations
+
+| Auto-Configuration           | Description                                                   | When to Disable                                                                              |
+| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SnowflakeAutoConfiguration` | Creates a `Snowflake` bean for ID generation                  | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy |
+| `ContextAutoConfiguration`   | Registers `ContextFilter` for automatic Request Context setup | When you have a custom context filter or don't need Request Context tracking                 |
+
+> **Note**: The `ContextAutoConfiguration` only activates for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`).
+
+### Using Request Context
+
+The library automatically sets up Request Context through the `ContextAutoConfiguration`. The context is populated from HTTP headers and made available throughout the request lifecycle.
+
+#### HTTP Headers
+
+The `ContextFilter` reads the following headers from incoming requests:
+
+| Header         | Description                                                 | Default Value       |
+| -------------- | ----------------------------------------------------------- | ------------------- |
+| `X-Request-ID` | Unique identifier for this specific request                 | Auto-generated UUID |
+| `X-Trace-ID`   | Distributed tracing ID for correlating logs across services | Auto-generated UUID |
+| `X-Source`     | The source or origin of the request                         | `"unknown"`         |
+
+#### Getting Request Context
+
+```java
+import com.intern.hub.library.common.context.RequestContext;
+import com.intern.hub.library.common.context.RequestContextHolder;
+
+@Service
+public class MyService {
+
+    public void doSomething() {
+        // Get the current request context
+        RequestContext context = RequestContextHolder.get();
+
+        // Access context fields
+        String traceId = context.traceId();        // Distributed tracing ID
+        String requestId = context.requestId();    // Unique request ID
+        Long startTime = context.startTime();      // Request start timestamp (ms)
+        String source = context.source();          // Request source/origin
+    }
+}
+```
+
+#### RequestContext Fields
+
+| Field       | Type     | Description                                                 |
+| ----------- | -------- | ----------------------------------------------------------- |
+| `traceId`   | `String` | Distributed tracing ID for correlating logs across services |
+| `requestId` | `String` | Unique identifier for this specific request                 |
+| `startTime` | `Long`   | Timestamp (in milliseconds) when the request started        |
+| `source`    | `String` | The source or origin of the request                         |
+
+#### Usage in Controllers
+
+```java
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+
+    @GetMapping("/{id}")
+    public ResponseApi<Order> getOrder(@PathVariable Long id) {
+        // Context is automatically available
+        RequestContext ctx = RequestContextHolder.get();
+        log.info("Processing request {} from source {}", ctx.requestId(), ctx.source());
+
+        Order order = orderService.findById(id);
+        return ResponseApi.ok(order);
+    }
+}
+```
+
+#### Usage for Logging
+
+```java
+@Service
+@Slf4j
+public class PaymentService {
+
+    public void processPayment(PaymentRequest request) {
+        RequestContext ctx = RequestContextHolder.get();
+
+        log.info("[TraceId: {}] [RequestId: {}] Processing payment for amount: {}",
+            ctx.traceId(),
+            ctx.requestId(),
+            request.amount());
+
+        // Your payment logic here...
+    }
+}
+```
+
+#### Creating Response Metadata
+
+Use `ResponseMetadata.fromRequestId()` to automatically populate response metadata from the current Request Context:
+
+```java
+@GetMapping("/users/{id}")
+public ResponseApi<User> getUser(@PathVariable Long id) {
+    User user = userService.findById(id);
+    return ResponseApi.ok(user, ResponseMetadata.fromRequestId());
+}
+```
+
+This produces a response with populated metadata:
+
+```json
+{
+  "data": { "id": 1, "name": "John" },
+  "metaData": {
+    "requestId": "abc-123-def",
+    "traceId": "xyz-789-uvw",
+    "timestamp": 1704067200000
+  }
+}
+```
+
+#### Important Notes
+
+1. **Scope Limitation**: Request Context is only available within the scope of an HTTP request. Accessing it outside of a request (e.g., in scheduled tasks, async threads without proper context propagation) will throw `IllegalStateException`.
+
+2. **Virtual Thread Compatible**: The library uses Java's `ScopedValue` which is optimized for virtual threads, making it more efficient than `ThreadLocal` in high-concurrency scenarios.
+
+3. **Check Binding**: If you're unsure whether a context is bound, you can check:
+
+```java
+if (RequestContextHolder.REQUEST_CONTEXT.isBound()) {
+    RequestContext ctx = RequestContextHolder.get();
+    // Use context...
+}
 ```
 
 ## Usage Examples
@@ -559,11 +682,11 @@ src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoCo
 public class ContextFilter implements Filter {
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, 
+    public void doFilter(ServletRequest request, ServletResponse response,
                          FilterChain chain) throws IOException, ServletException {
-        
+
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        
+
         // Create request context
         RequestContext requestContext = new RequestContext(
             UUID.randomUUID().toString(),  // traceId
@@ -571,14 +694,10 @@ public class ContextFilter implements Filter {
             System.currentTimeMillis(),
             httpRequest.getHeader("X-Source")
         );
-        
-        // Create auth context from JWT or session
-        AuthContext authContext = extractAuthContext(httpRequest);
-        
-        // Run request within both contexts
+
+        // Run request within context
         try {
             ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext)
-                .where(AuthContextHolder.AUTH_CONTEXT, authContext)
                 .run(() -> {
                     try {
                         chain.doFilter(request, response);
@@ -613,23 +732,19 @@ public class OrderService {
         this.orderRepository = orderRepository;
     }
 
-    public Order createOrder(CreateOrderRequest request) {
-        // Throw exception if not authenticated - global handler returns 401
-        AuthContext auth = AuthContextHolder.get()
-            .orElseThrow(() -> new UnauthorizeException("auth.required", "Authentication required"));
-        
+    public Order createOrder(Long userId, CreateOrderRequest request) {
         Order order = new Order();
         order.setId(snowflake.next());
-        order.setUserId(auth.userId());
+        order.setUserId(userId);
         order.setCreatedAt(DateTimeHelper.currentTimeMillis());
-        
+
         return orderRepository.save(order);
     }
 
     public Order getOrder(Long orderId) {
         // Throw exception if not found - global handler returns 404
         return orderRepository.findById(orderId)
-            .orElseThrow(() -> new NotFoundException("order.not.found", 
+            .orElseThrow(() -> new NotFoundException("order.not.found",
                 "Order with ID " + orderId + " not found"));
     }
 }
@@ -649,15 +764,14 @@ public class OrderController {
     }
 
     @PostMapping
-    @HasPermission(resource = "order", action = "create", scope = Scope.OWN)
     public ResponseApi<Order> createOrder(@RequestBody @Valid CreateOrderRequest request) {
         // Simply return data - errors are thrown as exceptions
-        Order order = orderService.createOrder(request);
+        Long userId = 1L; // Get from authentication
+        Order order = orderService.createOrder(userId, request);
         return ResponseApi.ok(order);
     }
 
     @GetMapping("/{id}")
-    @HasPermission(resource = "order", action = "read", scope = Scope.OWN)
     public ResponseApi<Order> getOrder(@PathVariable Long id) {
         // If order not found, service throws NotFoundException
         // Global handler converts it to proper error response
