@@ -40,7 +40,6 @@ dependencies {
     api("tools.jackson.core:jackson-databind:3.0.3")
 
     implementation("org.springframework:spring-web")
-    implementation("org.springframework:spring-aop")
     implementation("org.slf4j:slf4j-api")
     implementation("jakarta.servlet:jakarta.servlet-api")
 
