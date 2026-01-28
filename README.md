@@ -673,6 +673,61 @@ if (RequestContextHolder.REQUEST_CONTEXT.isBound()) {
 }
 ```
 
+## Dependency Management Best Practices
+
+### Avoiding Version Mismatches
+
+When building applications that use this library alongside Spring Boot, it's important to avoid hardcoding dependency versions. Version mismatches between Spring components can cause runtime errors and unexpected behavior.
+
+### Using Spring Boot BOM (Bill of Materials)
+
+The recommended approach is to use the Spring Boot BOM to manage all Spring-related dependency versions centrally:
+
+```kotlin
+plugins {
+    id("io.spring.dependency-management") version "1.1.7"
+}
+
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.boot:spring-boot-dependencies:4.0.1")
+    }
+}
+
+dependencies {
+    // No version needed - managed by BOM
+    implementation("org.springframework:spring-web")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("jakarta.servlet:jakarta.servlet-api")
+}
+```
+
+### Benefits of BOM Usage
+
+| Benefit                    | Description                                     |
+| -------------------------- | ----------------------------------------------- |
+| **Version Consistency**    | All Spring dependencies use compatible versions |
+| **Simplified Maintenance** | Update one version to upgrade all dependencies  |
+| **Reduced Conflicts**      | Prevents mixing incompatible library versions   |
+| **IDE Support**            | Better auto-completion and type checking        |
+
+### For Library Consumers
+
+If your project uses Spring Boot's parent POM or BOM, you can often omit versions when adding this library's transitive dependencies:
+
+```kotlin
+// In your application's build.gradle.kts
+dependencies {
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.0")
+
+    // Spring dependencies will inherit versions from Spring Boot BOM
+    // No need to specify versions explicitly
+}
+```
+
+> [!TIP]
+> Run `./gradlew dependencies` to view the dependency tree and verify that all versions are consistent.
+
 ## Usage Examples
 
 ### Complete Filter Setup

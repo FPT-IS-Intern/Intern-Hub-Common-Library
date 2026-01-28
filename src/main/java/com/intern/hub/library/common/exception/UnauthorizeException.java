@@ -1,25 +1,26 @@
 package com.intern.hub.library.common.exception;
 
-import lombok.Getter;
-
 /**
- * Exception thrown when authentication is required or has failed.
+ * Exception thrown when authentication is required but not provided or is
+ * invalid.
  * <p>
- * This exception is used when a request requires authentication but the user
- * has not provided valid credentials or the authentication has expired.
- * This exception results in an HTTP 401 Unauthorized response when handled by the
+ * This exception is used when the user is not authenticated or has invalid
+ * credentials.
+ * This exception results in an HTTP 401 Unauthorized response when handled by
+ * the
  * {@link com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice}.
  * </p>
  *
  * @see com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice#handleUnauthorizeException
  */
-public class UnauthorizeException extends RuntimeException {
+public class UnauthorizeException extends BaseException {
 
   /**
-   * The error code identifying the specific authentication failure.
+   * Constructs an UnauthorizeException with no code or message.
    */
-  @Getter
-  private String code;
+  public UnauthorizeException() {
+    super(ExceptionConstant.UNAUTHORIZED_DEFAULT_CODE);
+  }
 
   /**
    * Constructs an UnauthorizeException with the specified error code.
@@ -27,8 +28,7 @@ public class UnauthorizeException extends RuntimeException {
    * @param code the error code identifying the type of authentication failure
    */
   public UnauthorizeException(String code) {
-    super();
-    this.code = code;
+    super(code);
   }
 
   /**
@@ -38,7 +38,19 @@ public class UnauthorizeException extends RuntimeException {
    * @param message a detailed message describing the authentication failure
    */
   public UnauthorizeException(String code, String message) {
-    super(message);
-    this.code = code;
+    super(code, message);
   }
+
+  /**
+   * Constructs an UnauthorizeException with the specified error code, message,
+   * and cause.
+   *
+   * @param code    the error code identifying the type of authentication failure
+   * @param message a detailed message describing the authentication failure
+   * @param cause   the cause of this exception
+   */
+  public UnauthorizeException(String code, String message, Throwable cause) {
+    super(code, message, cause);
+  }
+
 }

@@ -1,45 +1,47 @@
 package com.intern.hub.library.common.exception;
 
-import lombok.Getter;
-
 /**
- * Exception thrown when a request conflicts with the current state of a resource.
+ * Exception thrown when data conflicts with existing state in the system.
  * <p>
- * This is typically used when attempting to create a resource that already exists,
- * or when updating a resource that has been modified since it was last read.
- * This exception results in an HTTP 409 Conflict response when handled by the
+ * This exception is typically used in scenarios such as duplicate entries,
+ * optimistic locking failures, or version conflicts. This exception results
+ * in an HTTP 409 Conflict response when handled by the
  * {@link com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice}.
  * </p>
  *
  * @see com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice#handleConflictDataException
  */
-public class ConflictDataException extends RuntimeException {
-
-  /**
-   * The error code identifying the specific type of conflict.
-   */
-  @Getter
-  private String code;
+public class ConflictDataException extends BaseException {
 
   /**
    * Constructs a ConflictDataException with the specified error code.
    *
-   * @param code the error code identifying the type of conflict
+   * @param code the error code identifying the type of data conflict
    */
   public ConflictDataException(String code) {
-    super();
-    this.code = code;
+    super(code);
   }
 
   /**
    * Constructs a ConflictDataException with the specified error code and message.
    *
-   * @param code    the error code identifying the type of conflict
+   * @param code    the error code identifying the type of data conflict
    * @param message a detailed message describing the conflict
    */
   public ConflictDataException(String code, String message) {
-    super(message);
-    this.code = code;
+    super(code, message);
+  }
+
+  /**
+   * Constructs a ConflictDataException with the specified error code, message,
+   * and cause.
+   *
+   * @param code    the error code identifying the type of data conflict
+   * @param message a detailed message describing the conflict
+   * @param cause   the cause of this exception
+   */
+  public ConflictDataException(String code, String message, Throwable cause) {
+    super(code, message, cause);
   }
 
 }

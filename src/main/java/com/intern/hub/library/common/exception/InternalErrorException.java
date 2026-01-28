@@ -1,24 +1,18 @@
 package com.intern.hub.library.common.exception;
 
-import lombok.Getter;
-
 /**
  * Exception thrown when an internal server error occurs.
  * <p>
- * This exception is used to wrap unexpected errors or indicate that something
- * went wrong on the server side. This exception results in an HTTP 500 Internal Server Error
- * response when handled by the {@link com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice}.
+ * This exception is used for unexpected errors that are not the client's fault.
+ * This exception results in an HTTP 500 Internal Server Error response when
+ * handled
+ * by the
+ * {@link com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice}.
  * </p>
  *
  * @see com.intern.hub.library.common.autoconfig.exadvice.DefaultGlobalExceptionAdvice#handleInternalErrorException
  */
-public class InternalErrorException extends RuntimeException {
-
-  /**
-   * The error code identifying the specific type of internal error.
-   */
-  @Getter
-  private String code;
+public class InternalErrorException extends BaseException {
 
   /**
    * Constructs an InternalErrorException with the specified error code.
@@ -26,18 +20,30 @@ public class InternalErrorException extends RuntimeException {
    * @param code the error code identifying the type of internal error
    */
   public InternalErrorException(String code) {
-    super();
-    this.code = code;
+    super(code);
   }
 
   /**
-   * Constructs an InternalErrorException with the specified error code and message.
+   * Constructs an InternalErrorException with the specified error code and
+   * message.
    *
    * @param code    the error code identifying the type of internal error
-   * @param message a detailed message describing the internal error
+   * @param message a detailed message describing the error
    */
   public InternalErrorException(String code, String message) {
-    super(message);
-    this.code = code;
+    super(code, message);
   }
+
+  /**
+   * Constructs an InternalErrorException with the specified error code, message,
+   * and cause.
+   *
+   * @param code    the error code identifying the type of internal error
+   * @param message a detailed message describing the error
+   * @param cause   the cause of this exception
+   */
+  public InternalErrorException(String code, String message, Throwable cause) {
+    super(code, message, cause);
+  }
+
 }

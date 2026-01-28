@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "2.0.0"
+version = "2.0.1"
 description = "common"
 
 java {
@@ -25,19 +25,33 @@ repositories {
     mavenCentral()
 }
 
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.boot:spring-boot-dependencies:4.0.2")
+    }
+}
+
 dependencies {
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
 
-    api("org.springframework.boot:spring-boot-autoconfigure:4.0.1")
-    api("org.springframework:spring-context:7.0.2")
-
-    implementation("org.springframework:spring-web:7.0.2")
-
+    api("org.springframework.boot:spring-boot-autoconfigure")
+    api("org.springframework:spring-context")
     api("tools.jackson.core:jackson-databind:3.0.3")
-    implementation("org.springframework.boot:spring-boot-starter-aop:3.5.10")
 
-    implementation("jakarta.servlet:jakarta.servlet-api:6.1.0")
+    implementation("org.springframework:spring-web")
+    implementation("org.springframework:spring-aop")
+    implementation("org.slf4j:slf4j-api")
+    implementation("jakarta.servlet:jakarta.servlet-api")
+
+    testImplementation(platform("org.junit:junit-bom:5.12.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.assertj:assertj-core:3.27.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 publishing {
