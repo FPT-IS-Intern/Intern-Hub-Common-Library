@@ -80,6 +80,10 @@ public final class ExceptionConstant {
   /** Default error code for invalid parameter errors (HTTP 400). */
   public static final String INVALID_PARAMETER_DEFAULT_CODE = "invalid.parameter";
 
+  public static final String HANDLER_NOT_FOUND = "Handler not found";
+
+  public static final String HANDLER_NOT_FOUND_DEFAULT_CODE = "handler.not.found";
+
   private ExceptionConstant() {
     // Utility class - prevent instantiation
   }

@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -195,6 +196,22 @@ public class DefaultGlobalExceptionAdvice {
                                         : ExceptionConstant.INTERNAL_SERVER_ERROR_DEFAULT_CODE,
                                 exception.getMessage() != null ? exception.getMessage()
                                         : ExceptionConstant.UNKNOWN_ERROR),
+                        null,
+                        ResponseMetadata.fromRequestId()));
+    }
+
+    /**
+     * Handles NoHandlerFoundException when no handler is found for a request.
+     *
+     * @return a ResponseEntity containing the error response with HTTP 404 status
+     */
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ResponseApi<?>> handleNoHandlerFoundException() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                new ResponseApi<>(
+                        new ResponseStatus(
+                                ExceptionConstant.HANDLER_NOT_FOUND_DEFAULT_CODE,
+                                ExceptionConstant.HANDLER_NOT_FOUND),
                         null,
                         ResponseMetadata.fromRequestId()));
     }
