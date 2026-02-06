@@ -28,6 +28,12 @@ import java.util.List;
  */
 public record ResponseStatus(String code, String message, List<FieldError> errors) {
 
+    private final static String OK_CODE = "success";
+
+    public static ResponseStatus ok() {
+        return new ResponseStatus(OK_CODE, null, null);
+    }
+
     /**
      * Creates a ResponseStatus with a code and message, without field errors.
      *

@@ -86,9 +86,24 @@ public record ResponseApi<T>(ResponseStatus status, T data, ResponseMetadata met
    */
   public static <T> ResponseApi<T> ok(T data) {
     return new ResponseApi<>(
-        null,
+        ResponseStatus.ok(),
         data,
-        null);
+        ResponseMetadata.fromRequestId());
+  }
+
+  /**
+   * Creates a success response with no content.
+   * <p>
+   * Status is set to OK, but data and metadata are null.
+   * </p>
+   *
+   * @return a new ResponseApi instance with no content
+   */
+  public static ResponseApi<?> noContent() {
+    return new ResponseApi<>(
+        ResponseStatus.ok(),
+        null,
+        ResponseMetadata.fromRequestId());
   }
 
   /**
