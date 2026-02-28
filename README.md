@@ -3,7 +3,7 @@
 A shared Java library providing common utilities, exception handling, and context management for Spring Boot microservices.
 
 [![Java Version](https://img.shields.io/badge/Java-25-blue.svg)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.1-green.svg)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-green.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
 > [!CAUTION]
@@ -19,6 +19,62 @@ A shared Java library providing common utilities, exception handling, and contex
 > - `Scope` → `com.intern.hub.starter.security.dto`
 >
 > **Migration**: If you use permission-based access control or authentication context, add the security library dependency and update your imports.
+
+> [!CAUTION]
+>
+> ## Breaking Changes in v2.0.4
+>
+> ### 1. `RequestContext` — Simplified Structure
+>
+> `RequestContext` now holds only a `requestId` and a generic attributes map. The `traceId`, `startTime`, and `source` fields have been **removed**.
+>
+> **Before:**
+> ```java
+> new RequestContext(traceId, requestId, startTime, source);
+> context.traceId();
+> context.startTime();
+> context.source();
+> ```
+>
+> **After:**
+> ```java
+> new RequestContext(requestId);
+> context.requestId();
+> context.putAttribute("key", value);
+> context.getAttribute("key");
+> ```
+>
+> ### 2. `ContextFilter` — Headers Changed
+>
+> The filter no longer reads `X-Trace-ID` or `X-Source` headers. Only `X-Request-ID` is consumed.
+>
+> **Removed headers**: `X-Trace-ID`, `X-Source`
+>
+> **Trace IDs** are now sourced from **OpenTelemetry** (see `ResponseMetadata` below).
+>
+> ### 3. `ResponseMetadata` — OpenTelemetry Integration
+>
+> `traceId` is no longer populated from `RequestContext`. It is now read from the active OpenTelemetry span via `Span.current().getSpanContext().getTraceId()`. If no valid span is present, `traceId` will be `null`.
+>
+> A new overload `fromRequestId(String signature)` is available to attach a custom signature to the metadata.
+>
+> ### 4. `ResponseApi.ok(T data)` — Response Shape Changed
+>
+> `ResponseApi.ok(data)` now **always** includes a `ResponseStatus` with code `"success"` and auto-populated `ResponseMetadata`. Previously `status` and `metaData` were `null`.
+>
+> **Before:**
+> ```json
+> { "status": null, "data": { ... }, "metaData": null }
+> ```
+>
+> **After:**
+> ```json
+> { "status": { "code": "success", "message": null, "errors": null }, "data": { ... }, "metaData": { "requestId": "...", "traceId": "...", "signature": null, "timestamp": 1704067200000 } }
+> ```
+>
+> If you need to pass custom metadata, use `ResponseApi.ok(data, metaData)` — this variant sets `status` to `null`.
+>
+> **Migration**: If your clients check `"status": null` for success detection, update them to check `"status.code": "success"` or use `ResponseApi.ok(data, metaData)`.
 
 ## Table of Contents
 
@@ -52,7 +108,7 @@ This library provides essential building blocks for building robust Spring Boot 
 ## Requirements
 
 - **Java 25** or higher (uses `ScopedValue` and other modern features)
-- **Spring Boot 4.0.1** or compatible version
+- **Spring Boot 4.0.2** or compatible version
 - **Gradle 9.x** for building
 
 ## Installation
@@ -72,7 +128,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.3")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.4")
 }
 ```
 
@@ -103,15 +159,19 @@ public class MyApplication {
 
 #### Supported Exceptions
 
-| Exception                 | HTTP Status | Default Code            |
-| ------------------------- | ----------- | ----------------------- |
-| `BadRequestException`     | 400         | `bad.request`           |
-| `UnauthorizeException`    | 401         | `unauthorized`          |
-| `ForbiddenException`      | 403         | `forbidden`             |
-| `NotFoundException`       | 404         | `resource.not.found`    |
-| `ConflictDataException`   | 409         | `conflict.data`         |
-| `TooManyRequestException` | 429         | `too.many.requests`     |
-| `InternalErrorException`  | 500         | `internal.server.error` |
+| Exception                                | HTTP Status | Default Code            |
+| ---------------------------------------- | ----------- | ----------------------- |
+| `BadRequestException`                    | 400         | `bad.request`           |
+| `UnauthorizeException`                   | 401         | `unauthorized`          |
+| `ForbiddenException`                     | 403         | `forbidden`             |
+| `NotFoundException`                      | 404         | `resource.not.found`    |
+| `NoHandlerFoundException`                | 404         | `handler.not.found`     |
+| `ConflictDataException`                  | 409         | `conflict.data`         |
+| `TooManyRequestException`                | 429         | `too.many.requests`     |
+| `InternalErrorException`                 | 500         | `internal.server.error` |
+| `MethodArgumentTypeMismatchException`    | 400         | `invalid.parameter`     |
+| `MethodArgumentNotValidException`        | 400         | `invalid.parameter`     |
+| `Exception` (catch-all)                  | 500         | `internal.server.error` |
 
 #### Throwing Exceptions
 
@@ -123,25 +183,52 @@ throw new NotFoundException("user.not.found");
 throw new BadRequestException("invalid.email", "Email format is invalid");
 ```
 
+#### Validation Error Response
+
+When `MethodArgumentNotValidException` is thrown (e.g., via `@Valid` on a request body), the handler returns a structured list of field-level errors in the `data` field:
+
+```json
+{
+  "status": {
+    "code": "invalid.parameter",
+    "message": "Invalid request parameters",
+    "errors": null
+  },
+  "data": [
+    { "field": "email", "message": "must not be blank" },
+    { "field": "age",   "message": "must be greater than 0" }
+  ],
+  "metaData": {
+    "requestId": "abc-123",
+    "traceId": "xyz-789",
+    "signature": null,
+    "timestamp": 1704067200000
+  }
+}
+```
+
 ### Request Context Management
 
 The library provides thread-safe context holders using Java's `ScopedValue` for virtual thread compatibility.
 
+`RequestContext` now stores a `requestId` and a flexible attributes map for any additional per-request data.
+
 ```java
 // Setting the context (typically in a filter)
-RequestContext requestContext = new RequestContext(
-    "trace-123",    // traceId
-    "request-456",  // requestId
-    System.currentTimeMillis(),  // startTime
-    "web-client"    // source
-);
+RequestContext requestContext = new RequestContext("request-456");
 
-ScopedValue.runWhere(RequestContextHolder.REQUEST_CONTEXT, requestContext, () -> {
+ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext).run(() -> {
     // Context is available throughout this scope
     RequestContext ctx = RequestContextHolder.get();
     System.out.println("Request ID: " + ctx.requestId());
+
+    // Store and retrieve custom attributes
+    ctx.putAttribute("userId", 42L);
+    Long userId = (Long) ctx.getAttribute("userId");
 });
 ```
+
+> **Note**: `traceId`, `startTime`, and `source` are no longer stored in `RequestContext`. Use OpenTelemetry instrumentation for distributed tracing.
 
 ### Snowflake ID Generator
 
@@ -155,6 +242,8 @@ The Snowflake generator is auto-configured. Configure it in `application.yml`:
 snowflake:
   machine-id: 1 # Unique ID for each instance (0-1023)
 ```
+
+The bean is only created if no other `Snowflake` bean exists in the application context (`@ConditionalOnMissingBean`).
 
 #### Usage
 
@@ -200,19 +289,26 @@ Utility class for converting between different date-time representations:
 
 ```java
 // From epoch milliseconds
-Instant instant = DateTimeHelper.toInstant(epochMillis);
-LocalDateTime localDateTime = DateTimeHelper.toLocalDateTime(epochMillis);
-ZonedDateTime zonedDateTime = DateTimeHelper.toZonedDateTime(epochMillis);
-String isoString = DateTimeHelper.toISOString(epochMillis);
+Instant instant           = DateTimeHelper.toInstant(epochMillis);
+LocalDateTime localDT     = DateTimeHelper.toLocalDateTime(epochMillis);
+ZonedDateTime zonedDT     = DateTimeHelper.toZonedDateTime(epochMillis);
+OffsetDateTime offsetDT   = DateTimeHelper.toOffsetDateTime(epochMillis); // NEW
+String isoString          = DateTimeHelper.toISOString(epochMillis);
 
 // To epoch milliseconds
 long millis = DateTimeHelper.from(instant);
 long millis = DateTimeHelper.from(localDateTime);
+long millis = DateTimeHelper.from(zonedDateTime);
+long millis = DateTimeHelper.from(offsetDateTime);  // NEW
+long millis = DateTimeHelper.from(date);            // NEW (java.util.Date)
 long millis = DateTimeHelper.fromISOString("2025-01-22T10:30:00Z");
 
 // Current time
-long now = DateTimeHelper.currentTimeMillis();
-LocalDateTime nowLocal = DateTimeHelper.now();
+long now                  = DateTimeHelper.currentTimeMillis();
+LocalDateTime nowLocal    = DateTimeHelper.now();
+
+// Zone info
+ZoneId zone               = DateTimeHelper.getDefaultZone(); // NEW
 ```
 
 #### RandomGenerator
@@ -238,18 +334,57 @@ boolean flag = RandomGenerator.randomBoolean();
 
 ### Standard API Response
 
-All API responses use a consistent structure through `ResponseApi`:
+All API responses use a consistent structure through `ResponseApi`.
+
+#### `ResponseApi.ok(data)` — Success with status and metadata
+
+Returns a response with `status.code = "success"` and auto-populated `metaData` (sourced from the active request context and OpenTelemetry span):
 
 ```json
 {
-  "status": null,
+  "status": {
+    "code": "success",
+    "message": null,
+    "errors": null
+  },
   "data": {
     "id": 123,
     "name": "John Doe"
   },
-  "metaData": null
+  "metaData": {
+    "requestId": "abc-123",
+    "traceId": "xyz-789",
+    "signature": null,
+    "timestamp": 1704067200000
+  }
 }
 ```
+
+#### `ResponseApi.ok(data, metaData)` — Success with custom metadata
+
+Returns a response where `status` is `null` and `metaData` is the value you provide:
+
+```json
+{
+  "status": null,
+  "data": { ... },
+  "metaData": { "requestId": "abc-123", ... }
+}
+```
+
+#### `ResponseApi.noContent()` — Success with no data
+
+Returns a response with `status.code = "success"`, `data = null`, and auto-populated `metaData`:
+
+```json
+{
+  "status": { "code": "success", "message": null, "errors": null },
+  "data": null,
+  "metaData": { ... }
+}
+```
+
+#### Error Response
 
 For error responses, the global exception handler automatically returns:
 
@@ -270,6 +405,22 @@ For error responses, the global exception handler automatically returns:
 }
 ```
 
+#### Available Factory Methods
+
+```java
+// Success response with auto-populated status ("success") and metadata
+ResponseApi.ok(data);
+
+// Success response with custom metadata; status is null
+ResponseApi.ok(data, metaData);
+
+// Success response with no data; status is "success" and metadata is auto-populated
+ResponseApi.noContent();
+
+// Full control over all fields
+ResponseApi.of(status, data, metaData);
+```
+
 #### Creating Responses
 
 ```java
@@ -279,33 +430,41 @@ public class UserController {
     @GetMapping("/users/{id}")
     public ResponseApi<User> getUser(@PathVariable Long id) {
         User user = userService.findById(id);
-        // For success, just return the data
         return ResponseApi.ok(user);
     }
 
     @PostMapping("/users")
-    public ResponseApi<User> createUser(@RequestBody CreateUserRequest request) {
-        // For errors, throw an exception - the global handler will format the response
+    public ResponseApi<User> createUser(@RequestBody @Valid CreateUserRequest request) {
         if (userService.existsByEmail(request.email())) {
             throw new ConflictDataException("user.email.exists", "Email already registered");
         }
         User user = userService.create(request);
         return ResponseApi.ok(user);
     }
+
+    @DeleteMapping("/users/{id}")
+    public ResponseApi<?> deleteUser(@PathVariable Long id) {
+        userService.delete(id);
+        return ResponseApi.noContent();
+    }
 }
 ```
 
-#### Available Factory Methods
+#### ResponseMetadata
+
+`ResponseMetadata` is populated automatically by `fromRequestId()`:
+
+- `requestId` — from `RequestContextHolder.get().requestId()` (if context is bound)
+- `traceId` — from the active **OpenTelemetry** span (`Span.current().getSpanContext().getTraceId()`); `null` if no valid span
+- `signature` — optional, pass via `fromRequestId(String signature)`
+- `timestamp` — current epoch milliseconds
 
 ```java
-// Simple success response with data only
-ResponseApi.ok(data);
+// Without signature
+ResponseMetadata meta = ResponseMetadata.fromRequestId();
 
-// Success response with data and metadata
-ResponseApi.ok(data, ResponseMetadata.fromRequestId());
-
-// Full control over all fields
-ResponseApi.of(status, data, metaData);
+// With custom signature
+ResponseMetadata meta = ResponseMetadata.fromRequestId("my-signature");
 ```
 
 ### Pagination Model
@@ -334,12 +493,10 @@ public class UserController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
 
-        // Fetch paginated data from service
         List<User> users = userService.findAll(page, size);
         long totalItems = userService.countAll();
         int totalPages = (int) Math.ceil((double) totalItems / size);
 
-        // Build pageable response
         PaginatedData<User> pageable = PaginatedData.<User>builder()
             .items(users)
             .totalItems(totalItems)
@@ -352,8 +509,6 @@ public class UserController {
 ```
 
 #### Empty PaginatedData
-
-For empty results, use the convenient factory method:
 
 ```java
 @GetMapping("/users/search")
@@ -370,23 +525,13 @@ public ResponseApi<PaginatedData<User>> searchUsers(@RequestParam String query) 
 
 #### Response Format
 
-A typical paginated API response looks like:
-
 ```json
 {
-  "status": null,
+  "status": { "code": "success", "message": null, "errors": null },
   "data": {
     "items": [
-      {
-        "id": 1,
-        "name": "John Doe",
-        "email": "john@example.com"
-      },
-      {
-        "id": 2,
-        "name": "Jane Smith",
-        "email": "jane@example.com"
-      }
+      { "id": 1, "name": "John Doe",   "email": "john@example.com" },
+      { "id": 2, "name": "Jane Smith", "email": "jane@example.com" }
     ],
     "totalItems": 42,
     "totalPages": 5
@@ -494,6 +639,10 @@ PaginatedData<String> pageableSet = PaginatedData.<String>builder()
 snowflake:
   machine-id: 1 # Required for distributed deployments (0-1023)
 
+# Request Context auto-configuration toggle (default: true)
+common:
+  context:
+    enabled: true
 
 # JVM timezone (for DateTimeHelper)
 # Set via: -Duser.timezone=America/New_York
@@ -503,8 +652,8 @@ snowflake:
 
 The library registers the following auto-configurations:
 
-- `SnowflakeAutoConfiguration` - Automatically creates a `Snowflake` bean
-- `ContextAutoConfiguration` - Automatically registers a `ContextFilter` for Request Context management (servlet applications only)
+- `SnowflakeAutoConfiguration` — Automatically creates a `Snowflake` bean (skipped if a `Snowflake` bean already exists)
+- `ContextAutoConfiguration` — Automatically registers a `ContextFilter` for Request Context management (servlet applications only)
 
 To see the auto-configuration file location:
 
@@ -514,9 +663,15 @@ src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoCo
 
 ### Disabling Auto-Configurations
 
-You can disable specific auto-configurations if you need custom behavior or want to avoid conflicts.
+#### Using `application.yml` (property toggle — preferred for `ContextAutoConfiguration`)
 
-#### Using `application.yml`
+```yaml
+common:
+  context:
+    enabled: false  # Disable ContextAutoConfiguration
+```
+
+#### Using `application.yml` (Spring exclusion)
 
 ```yaml
 spring:
@@ -547,21 +702,21 @@ public class MyApplication {
 | `SnowflakeAutoConfiguration` | Creates a `Snowflake` bean for ID generation                  | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy |
 | `ContextAutoConfiguration`   | Registers `ContextFilter` for automatic Request Context setup | When you have a custom context filter or don't need Request Context tracking                 |
 
-> **Note**: The `ContextAutoConfiguration` only activates for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`).
+> **Note**: The `ContextAutoConfiguration` only activates for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`) and when `common.context.enabled` is not set to `false`.
 
 ### Using Request Context
 
-The library automatically sets up Request Context through the `ContextAutoConfiguration`. The context is populated from HTTP headers and made available throughout the request lifecycle.
+The library automatically sets up Request Context through the `ContextAutoConfiguration`. The context is populated from the `X-Request-ID` HTTP header and made available throughout the request lifecycle via `ScopedValue`.
 
 #### HTTP Headers
 
-The `ContextFilter` reads the following headers from incoming requests:
+The `ContextFilter` reads the following header from incoming requests:
 
 | Header         | Description                                                 | Default Value       |
 | -------------- | ----------------------------------------------------------- | ------------------- |
 | `X-Request-ID` | Unique identifier for this specific request                 | Auto-generated UUID |
-| `X-Trace-ID`   | Distributed tracing ID for correlating logs across services | Auto-generated UUID |
-| `X-Source`     | The source or origin of the request                         | `"unknown"`         |
+
+> **Note**: `X-Trace-ID` and `X-Source` headers are **no longer read** by the filter. Distributed tracing is now handled by OpenTelemetry instrumentation.
 
 #### Getting Request Context
 
@@ -573,26 +728,23 @@ import com.intern.hub.library.common.context.RequestContextHolder;
 public class MyService {
 
     public void doSomething() {
-        // Get the current request context
         RequestContext context = RequestContextHolder.get();
 
-        // Access context fields
-        String traceId = context.traceId();        // Distributed tracing ID
-        String requestId = context.requestId();    // Unique request ID
-        Long startTime = context.startTime();      // Request start timestamp (ms)
-        String source = context.source();          // Request source/origin
+        String requestId = context.requestId();  // Unique request ID
+
+        // Custom per-request attributes
+        context.putAttribute("userId", 42L);
+        Long userId = (Long) context.getAttribute("userId");
     }
 }
 ```
 
 #### RequestContext Fields
 
-| Field       | Type     | Description                                                 |
-| ----------- | -------- | ----------------------------------------------------------- |
-| `traceId`   | `String` | Distributed tracing ID for correlating logs across services |
-| `requestId` | `String` | Unique identifier for this specific request                 |
-| `startTime` | `Long`   | Timestamp (in milliseconds) when the request started        |
-| `source`    | `String` | The source or origin of the request                         |
+| Field               | Type                    | Description                                      |
+| ------------------- | ----------------------- | ------------------------------------------------ |
+| `requestId`         | `String`                | Unique identifier for this specific request      |
+| `requestAttributes` | `Map<String, Object>`   | Generic per-request attribute store              |
 
 #### Usage in Controllers
 
@@ -603,9 +755,8 @@ public class OrderController {
 
     @GetMapping("/{id}")
     public ResponseApi<Order> getOrder(@PathVariable Long id) {
-        // Context is automatically available
         RequestContext ctx = RequestContextHolder.get();
-        log.info("Processing request {} from source {}", ctx.requestId(), ctx.source());
+        log.info("Processing request {}", ctx.requestId());
 
         Order order = orderService.findById(id);
         return ResponseApi.ok(order);
@@ -623,38 +774,12 @@ public class PaymentService {
     public void processPayment(PaymentRequest request) {
         RequestContext ctx = RequestContextHolder.get();
 
-        log.info("[TraceId: {}] [RequestId: {}] Processing payment for amount: {}",
-            ctx.traceId(),
+        log.info("[RequestId: {}] Processing payment for amount: {}",
             ctx.requestId(),
             request.amount());
 
         // Your payment logic here...
     }
-}
-```
-
-#### Creating Response Metadata
-
-Use `ResponseMetadata.fromRequestId()` to automatically populate response metadata from the current Request Context:
-
-```java
-@GetMapping("/users/{id}")
-public ResponseApi<User> getUser(@PathVariable Long id) {
-    User user = userService.findById(id);
-    return ResponseApi.ok(user, ResponseMetadata.fromRequestId());
-}
-```
-
-This produces a response with populated metadata:
-
-```json
-{
-  "data": { "id": 1, "name": "John" },
-  "metaData": {
-    "requestId": "abc-123-def",
-    "traceId": "xyz-789-uvw",
-    "timestamp": 1704067200000
-  }
 }
 ```
 
@@ -677,11 +802,9 @@ if (RequestContextHolder.REQUEST_CONTEXT.isBound()) {
 
 ### Avoiding Version Mismatches
 
-When building applications that use this library alongside Spring Boot, it's important to avoid hardcoding dependency versions. Version mismatches between Spring components can cause runtime errors and unexpected behavior.
+When building applications that use this library alongside Spring Boot, it's important to avoid hardcoding dependency versions.
 
 ### Using Spring Boot BOM (Bill of Materials)
-
-The recommended approach is to use the Spring Boot BOM to manage all Spring-related dependency versions centrally:
 
 ```kotlin
 plugins {
@@ -690,7 +813,7 @@ plugins {
 
 dependencyManagement {
     imports {
-        mavenBom("org.springframework.boot:spring-boot-dependencies:4.0.1")
+        mavenBom("org.springframework.boot:spring-boot-dependencies:4.0.2")
     }
 }
 
@@ -711,64 +834,37 @@ dependencies {
 | **Reduced Conflicts**      | Prevents mixing incompatible library versions   |
 | **IDE Support**            | Better auto-completion and type checking        |
 
-### For Library Consumers
-
-If your project uses Spring Boot's parent POM or BOM, you can often omit versions when adding this library's transitive dependencies:
-
-```kotlin
-// In your application's build.gradle.kts
-dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.0")
-
-    // Spring dependencies will inherit versions from Spring Boot BOM
-    // No need to specify versions explicitly
-}
-```
-
 > [!TIP]
 > Run `./gradlew dependencies` to view the dependency tree and verify that all versions are consistent.
 
 ## Usage Examples
 
-### Complete Filter Setup
+### Complete Filter Setup (Manual)
+
+If you disable `ContextAutoConfiguration` and need a custom filter:
 
 ```java
 @Component
-public class ContextFilter implements Filter {
+public class CustomContextFilter extends OncePerRequestFilter {
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response,
-                         FilterChain chain) throws IOException, ServletException {
-
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-
-        // Create request context
-        RequestContext requestContext = new RequestContext(
-            UUID.randomUUID().toString(),  // traceId
-            UUID.randomUUID().toString(),  // requestId
-            System.currentTimeMillis(),
-            httpRequest.getHeader("X-Source")
-        );
-
-        // Run request within context
-        try {
-            ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext)
-                .run(() -> {
-                    try {
-                        chain.doFilter(request, response);
-                    } catch (IOException | ServletException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-        } catch (RuntimeException e) {
-            if (e.getCause() instanceof IOException) {
-                throw (IOException) e.getCause();
-            }
-            if (e.getCause() instanceof ServletException) {
-                throw (ServletException) e.getCause();
-            }
-            throw e;
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws IOException, ServletException {
+        String requestId = request.getHeader("X-Request-ID");
+        if (requestId == null || requestId.isBlank()) {
+            requestId = UUID.randomUUID().toString();
         }
+
+        RequestContext requestContext = new RequestContext(requestId);
+
+        ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext).run(() -> {
+            try {
+                filterChain.doFilter(request, response);
+            } catch (IOException | ServletException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 }
 ```
@@ -797,7 +893,6 @@ public class OrderService {
     }
 
     public Order getOrder(Long orderId) {
-        // Throw exception if not found - global handler returns 404
         return orderRepository.findById(orderId)
             .orElseThrow(() -> new NotFoundException("order.not.found",
                 "Order with ID " + orderId + " not found"));
@@ -820,7 +915,6 @@ public class OrderController {
 
     @PostMapping
     public ResponseApi<Order> createOrder(@RequestBody @Valid CreateOrderRequest request) {
-        // Simply return data - errors are thrown as exceptions
         Long userId = 1L; // Get from authentication
         Order order = orderService.createOrder(userId, request);
         return ResponseApi.ok(order);
@@ -828,10 +922,14 @@ public class OrderController {
 
     @GetMapping("/{id}")
     public ResponseApi<Order> getOrder(@PathVariable Long id) {
-        // If order not found, service throws NotFoundException
-        // Global handler converts it to proper error response
         Order order = orderService.getOrder(id);
         return ResponseApi.ok(order);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseApi<?> deleteOrder(@PathVariable Long id) {
+        orderService.delete(id);
+        return ResponseApi.noContent();
     }
 }
 ```
