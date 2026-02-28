@@ -14,37 +14,29 @@ import java.util.UUID;
 
 public class ContextFilter extends OncePerRequestFilter {
 
-  private static final String UNKNOWN_SOURCE = "unknown";
-
   @Override
   protected void doFilterInternal(@NonNull HttpServletRequest request,
                                   @NonNull HttpServletResponse response,
                                   @NonNull FilterChain filterChain)  {
     String requestId = request.getHeader("X-Request-ID");
-    String traceId = request.getHeader("X-Trace-ID");
-    String source = request.getHeader("X-Source");
-
     if(requestId == null || requestId.isBlank()) {
       requestId = UUID.randomUUID().toString();
     }
-    if(traceId == null || traceId.isBlank()) {
-      traceId = UUID.randomUUID().toString();
-    }
-    if(source == null || source.isBlank()) {
-      source = UNKNOWN_SOURCE;
-    }
-
-    RequestContext requestContext = new RequestContext(traceId, requestId, System.currentTimeMillis(), source);
-
-    ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext).run(() -> next(filterChain, request, response));
+    RequestContext requestContext = new RequestContext(requestId);
+    next(requestContext, filterChain, request, response);
   }
 
-  private void next(FilterChain filterChain, HttpServletRequest request, HttpServletResponse response) {
-    try {
-      filterChain.doFilter(request, response);
-    } catch (IOException | ServletException e) {
-      throw new RuntimeException(e);
-    }
+  private void next(RequestContext requestContext,
+                    FilterChain filterChain,
+                    HttpServletRequest request,
+                    HttpServletResponse response) {
+    ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext).run(() -> {
+      try {
+        filterChain.doFilter(request, response);
+      } catch (IOException | ServletException e) {
+        throw new RuntimeException(e);
+      }
+    });
   }
 
 }
