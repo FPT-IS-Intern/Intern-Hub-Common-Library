@@ -2,124 +2,89 @@ package com.intern.hub.library.common.utils;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * A Snowflake ID generator that produces unique 64-bit IDs based on timestamp, machine ID, and sequence number.
- * The generated ID structure is as follows:
- * <pre>
- * | 41 bits: timestamp | 10 bits: machine ID | 12 bits: sequence number |
- * </pre>
- */
-public class Snowflake {
+public final class Snowflake {
 
-  // 1 ms can generate 4096 ids per machine
+  private static final long SEQUENCE_BITS   = 12L;
+  private static final long MACHINE_ID_BITS = 10L;
+  private static final long TIMESTAMP_BITS  = 41L;
 
-  private static final long MACHINE_ID_BITS = 10;
-  private static final long SEQUENCE_BITS = 12;
-  private static final long TIME_STAMP_BITS = 41;
+  private static final long SEQUENCE_MASK   = (1L << SEQUENCE_BITS) - 1;
+  private static final long MACHINE_ID_MASK = (1L << MACHINE_ID_BITS) - 1;
 
-  private static final long MACHINE_ID_SHIFT = SEQUENCE_BITS + TIME_STAMP_BITS;
-  private static final long TIMESTAMP_SHIFT = SEQUENCE_BITS;
+  private static final long MACHINE_ID_SHIFT = SEQUENCE_BITS;                          // 12
+  private static final long TIMESTAMP_SHIFT  = SEQUENCE_BITS + MACHINE_ID_BITS;        // 22
 
-  private static final long DEFAULT_EPOCH = LocalDateTime.of(2025, 1, 1, 0, 0).toInstant(ZoneOffset.UTC).toEpochMilli();
+  private static final long DEFAULT_EPOCH =
+      LocalDateTime.of(2025, 1, 1, 0, 0)
+          .toInstant(ZoneOffset.UTC)
+          .toEpochMilli();
 
-  private static final long SEQUENCE_MASK = (1L << SEQUENCE_BITS) - 1;
+  private final AtomicLong state = new AtomicLong(0L);
 
-  private final long machineId;
+  private final long machineIdShifted;
   private final long epoch;
-  private long sequence = 0L;
-  private long lastTimestamp = -1L;
 
-  /**
-   * Creates a new Snowflake ID generator with the specified machine ID and default epoch.
-   * <p>The default epoch is January 1, 2025, 00:00:00 UTC.</p>
-   *
-   * @param machineId the unique machine ID (must be between 0 and 1023)
-   * @throws IllegalArgumentException if machineId is outside the valid range
-   */
   public Snowflake(long machineId) {
     this(machineId, DEFAULT_EPOCH);
   }
 
-  /**
-   * Creates a new Snowflake ID generator with the specified machine ID and custom epoch.
-   *
-   * @param machineId   the unique machine ID (must be between 0 and 1023)
-   * @param customEpoch the custom epoch in milliseconds since Unix epoch
-   * @throws IllegalArgumentException if machineId is outside the valid range
-   */
+
   public Snowflake(long machineId, long customEpoch) {
+    if (machineId < 0 || machineId > MACHINE_ID_MASK) {
+      throw new IllegalArgumentException("Machine ID must be between 0 and " + MACHINE_ID_MASK);
+    }
     this.epoch = customEpoch;
-    if (machineId < 0 || ((machineId > (1L << MACHINE_ID_BITS) - 1))) {
-      throw new IllegalArgumentException("Machine ID must be between 0 and " + ((1L << MACHINE_ID_BITS) - 1));
-    }
-    this.machineId = machineId;
+    this.machineIdShifted = machineId << MACHINE_ID_SHIFT; // pre-compute
   }
 
-  private long waitForNextMillis() {
-    long currentTimeMillis = System.currentTimeMillis();
-    while (currentTimeMillis <= lastTimestamp) {
-      currentTimeMillis =  System.currentTimeMillis();
-    }
-    return currentTimeMillis;
-  }
 
-  /**
-   * Generates the next unique ID.
-   *
-   * @return A unique long ID.
-   */
-  public synchronized long next() {
-    long currentTimestamp = System.currentTimeMillis();
-    if (currentTimestamp < lastTimestamp) {
-      if(lastTimestamp - currentTimestamp > 500) {
-        throw new IllegalStateException("Clock moved backwards. Refusing to generate id for " +
-            (lastTimestamp - currentTimestamp) + " milliseconds");
+  public long next() {
+    while (true) {
+      long now     = currentTime();
+      long current = state.get();
+      long lastTs = current >>> SEQUENCE_BITS;
+      long seq    = current & SEQUENCE_MASK;
+      long nextTs;
+      long nextSeq;
+      if (now > lastTs) {
+        nextTs  = now;
+        nextSeq = 0L;
+      } else {
+        nextTs  = lastTs;
+        nextSeq = seq + 1;
+        if (nextSeq > SEQUENCE_MASK) {
+          nextTs  = spinUntilNextMs(lastTs);
+          nextSeq = 0L;
+        }
       }
-      try {
-        Thread.sleep(lastTimestamp - currentTimestamp + 2);
-      } catch (InterruptedException e) {
-        throw new RuntimeException(e);
+      long newState = (nextTs << SEQUENCE_BITS) | nextSeq;
+      if (state.compareAndSet(current, newState)) {
+        return (nextTs << TIMESTAMP_SHIFT) | machineIdShifted | nextSeq;
       }
-      currentTimestamp = System.currentTimeMillis();
     }
-    long timestamp = currentTimestamp - epoch;
-    if (currentTimestamp != lastTimestamp) {
-      sequence = 0L;
-      lastTimestamp = currentTimestamp;
-    } else if (sequence >= SEQUENCE_MASK) {
-      long nextMillis = waitForNextMillis();
-      timestamp = nextMillis - epoch;
-      sequence = 0L;
-      lastTimestamp = nextMillis;
-    } else {
-      ++sequence;
-    }
-    long timestampShifted = timestamp << TIMESTAMP_SHIFT;
-    long machineIdShifted = machineId << MACHINE_ID_SHIFT;
-    return timestampShifted | machineIdShifted | sequence;
   }
 
-  /**
-   * Extracts the timestamp from a given ID.
-   *
-   * @param id The unique long ID.
-   * @return The extracted timestamp in milliseconds since epoch.
-   */
   public long extractTimestamp(long id) {
-    return ((id >> TIMESTAMP_SHIFT) &
-        ((1L << TIME_STAMP_BITS) - 1)) + epoch;
+    long relativeTs = (id >>> TIMESTAMP_SHIFT) & ((1L << TIMESTAMP_BITS) - 1);
+    return relativeTs + epoch;
   }
 
-  /**
-   * Extracts the machine ID from a given ID.
-   *
-   * @param id The unique long ID.
-   * @return The extracted machine ID.
-   */
   public long extractMachineId(long id) {
-    return (id >> MACHINE_ID_SHIFT) &
-        ((1L << MACHINE_ID_BITS) - 1);
+    return (id >>> MACHINE_ID_SHIFT) & MACHINE_ID_MASK;
+  }
+
+  private long currentTime() {
+    return System.currentTimeMillis() - epoch;
+  }
+
+  private long spinUntilNextMs(long lastTs) {
+    long ts;
+    do {
+      ts = currentTime();
+    } while (ts <= lastTs);
+    return ts;
   }
 
 }
