@@ -4,6 +4,7 @@ A shared Java library providing common utilities, exception handling, and contex
 
 [![Java Version](https://img.shields.io/badge/Java-25-blue.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-green.svg)](https://spring.io/projects/spring-boot)
+[![Version](https://img.shields.io/badge/Version-2.0.5-orange.svg)](https://jitpack.io)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
 > [!CAUTION]
@@ -19,6 +20,52 @@ A shared Java library providing common utilities, exception handling, and contex
 > - `Scope` → `com.intern.hub.starter.security.dto`
 >
 > **Migration**: If you use permission-based access control or authentication context, add the security library dependency and update your imports.
+
+> [!CAUTION]
+>
+> ## Breaking Changes in v2.0.5
+>
+> ### 1. `LoggingProperties` — Configuration Prefix Changed
+>
+> The configuration prefix for `LoggingProperties` has been renamed from `logging` to `common.logging` to avoid conflicting with Spring Boot's own `logging.*` namespace.
+>
+> **Before:**
+> ```yaml
+> logging:
+>   request: true
+>   response: true
+>   header: false
+>   mask-headers:
+>     - authorization
+>   mask-fields:
+>     - password
+> ```
+>
+> **After:**
+> ```yaml
+> common:
+>   logging:
+>     request: true
+>     response: true
+>     header: false
+>     mask-headers:
+>       - authorization
+>     mask-fields:
+>       - password
+> ```
+>
+> **Migration**: Rename all `logging.*` keys in your configuration files to `common.logging.*`.
+>
+> ### 2. `RequestLoggingAutoConfiguration` — Now Fully Active
+>
+> `RequestLoggingAutoConfiguration` was previously an empty placeholder. It is now a fully registered `@AutoConfiguration` that creates and registers the `RequestLoggingFilter` bean. If your application defined its own `RequestLoggingFilter` bean or `FilterRegistrationBean<RequestLoggingFilter>`, review for conflicts.
+>
+> **New disabling option:**
+> ```yaml
+> common:
+>   logging:
+>     enabled: false  # Disable RequestLoggingAutoConfiguration entirely
+> ```
 
 > [!CAUTION]
 >
@@ -84,6 +131,7 @@ A shared Java library providing common utilities, exception handling, and contex
 - [Features](#features)
   - [Global Exception Handling](#global-exception-handling)
   - [Request Context Management](#request-context-management)
+  - [Request / Response Logging](#request--response-logging)
   - [Snowflake ID Generator](#snowflake-id-generator)
   - [Utility Classes](#utility-classes)
   - [Standard API Response](#standard-api-response)
@@ -102,6 +150,7 @@ This library provides essential building blocks for building robust Spring Boot 
 
 - **Global Exception Handling**: Centralized exception handling with standardized API responses
 - **Request Context Management**: Thread-safe request context using Java's `ScopedValue`
+- **Request / Response Logging**: Structured, opt-in logging of JSON request/response bodies and headers with automatic sensitive-field masking
 - **Snowflake ID Generator**: Distributed unique ID generation
 - **Utility Classes**: Date/time helpers and random generators
 
@@ -128,7 +177,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.4")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.5")
 }
 ```
 
@@ -230,9 +279,79 @@ ScopedValue.where(RequestContextHolder.REQUEST_CONTEXT, requestContext).run(() -
 
 > **Note**: `traceId`, `startTime`, and `source` are no longer stored in `RequestContext`. Use OpenTelemetry instrumentation for distributed tracing.
 
+### Request / Response Logging
+
+The library provides structured, opt-in HTTP logging via `RequestLoggingAutoConfiguration`. It registers a `RequestLoggingFilter` that operates only on `application/json` requests and masks sensitive data automatically.
+
+> **All logging is disabled by default.** You must explicitly opt in to each category.
+
+#### Enabling Logging
+
+```yaml
+common:
+  logging:
+    request: true    # log the request body
+    response: true   # log the response body
+    header: true     # log the request headers
+```
+
+#### Masking Sensitive Data
+
+Header values and JSON body fields are masked before they are written to the log.
+
+```yaml
+common:
+  logging:
+    mask-headers:              # case-insensitive; defaults shown
+      - authorization
+      - cookie
+      - set-cookie
+      - x-api-key
+    mask-fields:               # JSON field names; defaults shown
+      - password
+      - accessToken
+      - refreshToken
+      - cardNumber
+```
+
+Masked values are replaced with `******` in the log output.
+
+#### Log Format
+
+Each log line contains `method`, `uri`, `requestId`, and the relevant payload:
+
+```
+Headers: method=POST, uri=/api/login, requestId=abc-123, headers=content-type=application/json; authorization=******;
+Request: method=POST, uri=/api/login, requestId=abc-123, body={"email":"user@example.com","password":"******"}
+Response: method=POST, uri=/api/login, requestId=abc-123, body={"status":{"code":"success"},"data":{"accessToken":"******"}}
+```
+
+#### Disabling the Auto-Configuration
+
+```yaml
+common:
+  logging:
+    enabled: false  # turns off RequestLoggingAutoConfiguration entirely
+```
+
+Or via Spring exclusion:
+
+```yaml
+spring:
+  autoconfigure:
+    exclude:
+      - com.intern.hub.library.common.autoconfig.request.RequestLoggingAutoConfiguration
+```
+
+#### Important Notes
+
+- Only `application/json` requests are buffered and logged. Other content types (multipart, plain text, etc.) pass through without buffering overhead.
+- When all three logging flags are `false` (the default), the filter short-circuits immediately with zero buffering cost.
+- The filter runs at `Ordered.LOWEST_PRECEDENCE`, after the `ContextFilter`, so `requestId` is always available in log lines.
+- Request bodies are capped at **8 192 bytes** (`ContentCachingRequestWrapper` limit) to prevent memory pressure on large uploads.
+
 ### Snowflake ID Generator
 
-Generate unique 64-bit IDs suitable for distributed systems.
 
 #### Auto-Configuration
 
@@ -644,6 +763,21 @@ common:
   context:
     enabled: true
 
+  # Request/response logging (all disabled by default)
+  logging:
+    enabled: true      # set to false to disable the auto-configuration entirely
+    request: false     # log JSON request bodies
+    response: false    # log JSON response bodies
+    header: false      # log request headers
+    mask-headers:
+      - authorization
+      - cookie
+      - set-cookie
+    mask-fields:
+      - password
+      - accessToken
+      - refreshToken
+
 # JVM timezone (for DateTimeHelper)
 # Set via: -Duser.timezone=America/New_York
 ```
@@ -654,6 +788,7 @@ The library registers the following auto-configurations:
 
 - `SnowflakeAutoConfiguration` — Automatically creates a `Snowflake` bean (skipped if a `Snowflake` bean already exists)
 - `ContextAutoConfiguration` — Automatically registers a `ContextFilter` for Request Context management (servlet applications only)
+- `RequestLoggingAutoConfiguration` — Automatically registers a `RequestLoggingFilter` for structured request/response logging (servlet applications only; all logging disabled by default)
 
 To see the auto-configuration file location:
 
@@ -679,6 +814,7 @@ spring:
     exclude:
       - com.intern.hub.library.common.autoconfig.snowflake.SnowflakeAutoConfiguration
       - com.intern.hub.library.common.autoconfig.context.ContextAutoConfiguration
+      - com.intern.hub.library.common.autoconfig.request.RequestLoggingAutoConfiguration
 ```
 
 #### Using `@SpringBootApplication` Annotation
@@ -686,7 +822,8 @@ spring:
 ```java
 @SpringBootApplication(exclude = {
     SnowflakeAutoConfiguration.class,
-    ContextAutoConfiguration.class
+    ContextAutoConfiguration.class,
+    RequestLoggingAutoConfiguration.class
 })
 public class MyApplication {
     public static void main(String[] args) {
@@ -697,12 +834,13 @@ public class MyApplication {
 
 #### Available Auto-Configurations
 
-| Auto-Configuration           | Description                                                   | When to Disable                                                                              |
-| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `SnowflakeAutoConfiguration` | Creates a `Snowflake` bean for ID generation                  | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy |
-| `ContextAutoConfiguration`   | Registers `ContextFilter` for automatic Request Context setup | When you have a custom context filter or don't need Request Context tracking                 |
+| Auto-Configuration                | Description                                                                         | When to Disable                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `SnowflakeAutoConfiguration`      | Creates a `Snowflake` bean for ID generation                                        | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy        |
+| `ContextAutoConfiguration`        | Registers `ContextFilter` for automatic Request Context setup                       | When you have a custom context filter or don't need Request Context tracking                        |
+| `RequestLoggingAutoConfiguration` | Registers `RequestLoggingFilter` for structured JSON request/response body logging  | When you have a custom logging filter or want to disable logging infrastructure completely          |
 
-> **Note**: The `ContextAutoConfiguration` only activates for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`) and when `common.context.enabled` is not set to `false`.
+> **Note**: `ContextAutoConfiguration` and `RequestLoggingAutoConfiguration` only activate for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`). `ContextAutoConfiguration` also checks `common.context.enabled` and `RequestLoggingAutoConfiguration` checks `common.logging.enabled` (both default to `true`).
 
 ### Using Request Context
 

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "2.0.4"
+version = "2.0.5"
 description = "common"
 
 java {

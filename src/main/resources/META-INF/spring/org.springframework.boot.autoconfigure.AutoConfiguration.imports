@@ -1,2 +1,3 @@
 com.intern.hub.library.common.autoconfig.snowflake.SnowflakeAutoConfiguration
 com.intern.hub.library.common.autoconfig.context.ContextAutoConfiguration
+com.intern.hub.library.common.autoconfig.request.RequestLoggingAutoConfiguration
