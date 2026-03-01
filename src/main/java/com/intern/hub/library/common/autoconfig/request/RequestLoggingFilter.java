@@ -72,13 +72,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
   private final Set<String> maskHeaders;
   private final Set<String> maskFields;
 
-  /**
-   * Constructs a new {@code RequestLoggingFilter} with the given properties and mapper.
-   *
-   * @param loggingProperties the logging configuration properties
-   * @param objectMapper      the Jackson {@link ObjectMapper} used to parse and re-serialize
-   *                          JSON bodies for field masking
-   */
   public RequestLoggingFilter(LoggingProperties loggingProperties, ObjectMapper objectMapper) {
     this.loggingProperties = loggingProperties;
     this.objectMapper = objectMapper;
@@ -88,39 +81,27 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
     this.maskFields = new HashSet<>(loggingProperties.getMaskFields());
   }
 
-  /**
-   * Intercepts the request/response cycle and, for {@code application/json} requests,
-   * logs the headers, request body, and/or response body according to the active
-   * {@link LoggingProperties}.
-   *
-   * <p>
-   * If none of {@code request}, {@code response}, or {@code header} logging is enabled,
-   * the filter delegates immediately without any buffering overhead.
-   * </p>
-   *
-   * @param request     the incoming HTTP request
-   * @param response    the outgoing HTTP response
-   * @param filterChain the remaining filter chain
-   * @throws ServletException if a servlet-level error occurs
-   * @throws IOException      if an I/O error occurs during processing
-   */
   @Override
   protected void doFilterInternal(@NonNull HttpServletRequest request,
                                   @NonNull HttpServletResponse response,
                                   @NonNull FilterChain filterChain) throws ServletException, IOException {
-    if (!loggingProperties.isRequest() && !loggingProperties.isHeader() && !loggingProperties.isResponse()) {
+    String contentType = request.getContentType();
+    if (!loggingProperties.isRequest() &&
+        !loggingProperties.isHeader() &&
+        !loggingProperties.isResponse() &&
+        (contentType == null || !contentType.toLowerCase().startsWith("application/json"))) {
       filterChain.doFilter(request, response);
       return;
     }
-    String contentType = request.getContentType();
-    if (contentType != null && contentType.toLowerCase().startsWith("application/json")) {
-      String uri = request.getRequestURI();
-      String method = request.getMethod();
-      String requestId = RequestContextHolder.get().requestId();
-      ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request, 8192);
-      ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
+    String uri = request.getRequestURI();
+    String method = request.getMethod();
+    String requestId = RequestContextHolder.get().requestId();
+    ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request, 8192);
+    ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
+    try {
+      filterChain.doFilter(wrappedRequest, wrappedResponse);
+    } finally {
       try {
-        filterChain.doFilter(wrappedRequest, wrappedResponse);
         if (loggingProperties.isHeader()) {
           StringBuilder headers = new StringBuilder();
           request.getHeaderNames().asIterator().forEachRemaining(headerName -> {
@@ -138,42 +119,28 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
           log.info("Request: method={}, uri={}, requestId={}, body={}", method, uri, requestId, requestBody);
         }
         if (loggingProperties.isResponse()) {
-          String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), wrappedResponse.getCharacterEncoding()));
-          log.info("Response: method={}, uri={}, requestId={}, body={}", method, uri, requestId, responseBody);
+          String responseContentType = wrappedResponse.getContentType();
+          int status = wrappedResponse.getStatus();
+          if (responseContentType != null && responseContentType.toLowerCase().startsWith("application/json")) {
+            String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), wrappedResponse.getCharacterEncoding()));
+            log.info("Response: method={}, uri={}, requestId={}, status={}, body={}", method, uri, requestId, status, responseBody);
+          } else {
+            log.info("Response: method={}, uri={}, requestId={}, status={}", method, uri, requestId, status);
+          }
         }
-      } catch (IOException | ServletException e) {
-        throw new RuntimeException(e);
+      } catch (Exception e) {
+        log.warn("Failed to log request/response: {}", e.getMessage());
       } finally {
         wrappedResponse.copyBodyToResponse();
       }
-    } else {
-      filterChain.doFilter(request, response);
     }
   }
 
-  /**
-   * Returns {@link Ordered#LOWEST_PRECEDENCE} so this filter runs after all other
-   * filters (including the context filter that populates the request ID).
-   *
-   * @return {@link Ordered#LOWEST_PRECEDENCE}
-   */
   @Override
   public int getOrder() {
     return Ordered.LOWEST_PRECEDENCE;
   }
 
-  /**
-   * Parses {@code body} as JSON and replaces the values of any fields listed in
-   * {@link LoggingProperties#getMaskFields()} with {@code ******}.
-   *
-   * <p>
-   * If {@code body} is blank, the mask-fields set is empty, or the body cannot be
-   * parsed as JSON, the original string is returned unchanged.
-   * </p>
-   *
-   * @param body the raw JSON string to mask
-   * @return the masked JSON string, or the original value if masking is not applicable
-   */
   private String maskJson(String body) {
     if (body == null || body.isBlank() || maskFields.isEmpty()) {
       return body;
@@ -187,12 +154,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
     }
   }
 
-  /**
-   * Recursively traverses a {@link JsonNode} tree and masks the values of any
-   * object fields whose names are present in {@link #maskFields}.
-   *
-   * @param node the JSON node to traverse and mask
-   */
   private void maskNode(JsonNode node) {
     if (node.isObject()) {
       ObjectNode objectNode = (ObjectNode) node;
