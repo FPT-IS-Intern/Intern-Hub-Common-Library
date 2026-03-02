@@ -1,7 +1,8 @@
 package com.intern.hub.library.common.autoconfig.request;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -70,6 +71,7 @@ import tools.jackson.databind.ObjectMapper;
  * @see RequestLoggingFilter
  * @see LoggingProperties
  */
+@Slf4j
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnProperty(name = "common.logging.enabled", havingValue = "true", matchIfMissing = true)
@@ -83,19 +85,24 @@ public class RequestLoggingAutoConfiguration {
    * when a {@link ObjectMapper} bean is available in the application context.
    * </p>
    *
-   * @param loggingProperties the logging configuration properties
-   * @param objectMapper      the Jackson {@link ObjectMapper} used for JSON body masking
    * @return a {@link FilterRegistrationBean} configured with the {@link RequestLoggingFilter}
    */
   @Bean
-  @ConditionalOnBean(ObjectMapper.class)
-  public FilterRegistrationBean<RequestLoggingFilter> requestLoggingFilter(
-      LoggingProperties loggingProperties, ObjectMapper objectMapper) {
+  public FilterRegistrationBean<RequestLoggingFilter> requestLoggingFilterFilterRegistrationBean(RequestLoggingFilter requestLoggingFilter) {
     FilterRegistrationBean<RequestLoggingFilter> registrationBean = new FilterRegistrationBean<>();
-    registrationBean.setFilter(new RequestLoggingFilter(loggingProperties, objectMapper));
+    registrationBean.setFilter(requestLoggingFilter);
     registrationBean.addUrlPatterns("/*");
     registrationBean.setOrder(Ordered.LOWEST_PRECEDENCE);
     return registrationBean;
+  }
+
+  @Bean
+  public RequestLoggingFilter requestLoggingFilter(LoggingProperties loggingProperties, ObjectProvider<ObjectMapper> objectMapperProvider) {
+    ObjectMapper objectMapper = objectMapperProvider.getIfAvailable(ObjectMapper::new);
+    log.info("RequestLoggingFilter is enabled with properties: request={}, response={}, header={}, maskHeaders={}, maskFields={}",
+        loggingProperties.isRequest(), loggingProperties.isResponse(), loggingProperties.isHeader(),
+        loggingProperties.getMaskHeaders(), loggingProperties.getMaskFields());
+    return new RequestLoggingFilter(loggingProperties, objectMapper);
   }
 
 }

@@ -17,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -89,7 +90,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
     if (!loggingProperties.isRequest() &&
         !loggingProperties.isHeader() &&
         !loggingProperties.isResponse() &&
-        (contentType == null || !contentType.toLowerCase().startsWith("application/json"))) {
+        (contentType != null && !contentType.toLowerCase().startsWith("application/json"))) {
       filterChain.doFilter(request, response);
       return;
     }
@@ -115,14 +116,14 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
           log.info("Headers: method={}, uri={}, requestId={}, headers={}", method, uri, requestId, headers);
         }
         if (loggingProperties.isRequest()) {
-          String requestBody = maskJson(new String(wrappedRequest.getContentAsByteArray(), wrappedRequest.getCharacterEncoding()));
+          String requestBody = maskJson(new String(wrappedRequest.getContentAsByteArray(), StandardCharsets.UTF_8));
           log.info("Request: method={}, uri={}, requestId={}, body={}", method, uri, requestId, requestBody);
         }
         if (loggingProperties.isResponse()) {
           String responseContentType = wrappedResponse.getContentType();
           int status = wrappedResponse.getStatus();
           if (responseContentType != null && responseContentType.toLowerCase().startsWith("application/json")) {
-            String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), wrappedResponse.getCharacterEncoding()));
+            String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), StandardCharsets.UTF_8));
             log.info("Response: method={}, uri={}, requestId={}, status={}, body={}", method, uri, requestId, status, responseBody);
           } else {
             log.info("Response: method={}, uri={}, requestId={}, status={}", method, uri, requestId, status);

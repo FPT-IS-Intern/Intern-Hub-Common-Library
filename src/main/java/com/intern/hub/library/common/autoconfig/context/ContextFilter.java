@@ -10,7 +10,6 @@ import lombok.NonNull;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
 
 public class ContextFilter extends OncePerRequestFilter {
 
@@ -18,10 +17,7 @@ public class ContextFilter extends OncePerRequestFilter {
   protected void doFilterInternal(@NonNull HttpServletRequest request,
                                   @NonNull HttpServletResponse response,
                                   @NonNull FilterChain filterChain)  {
-    String requestId = request.getHeader("X-Request-ID");
-    if(requestId == null || requestId.isBlank()) {
-      requestId = UUID.randomUUID().toString();
-    }
+    String requestId = String.valueOf(request.getHeader("X-Request-ID"));
     RequestContext requestContext = new RequestContext(requestId);
     next(requestContext, filterChain, request, response);
   }

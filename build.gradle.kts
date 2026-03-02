@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "2.0.5"
+version = "2.0.6"
 description = "common"
 
 java {
@@ -28,6 +28,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom("org.springframework.boot:spring-boot-dependencies:4.0.2")
+        mavenBom("io.opentelemetry:opentelemetry-bom:1.59.0")
     }
 }
 
@@ -37,9 +38,11 @@ dependencies {
 
     api("org.springframework.boot:spring-boot-autoconfigure")
     api("org.springframework:spring-context")
-    api("tools.jackson.core:jackson-databind:3.0.3")
+    api("tools.jackson.core:jackson-databind:3.1.0")
 
-    implementation("io.opentelemetry:opentelemetry-api")
+    api("io.opentelemetry:opentelemetry-api")
+    api("org.springframework.boot:spring-boot-starter-opentelemetry")
+    api("io.opentelemetry:opentelemetry-sdk-trace")
 
     implementation("org.springframework:spring-web")
     implementation("org.slf4j:slf4j-api")
