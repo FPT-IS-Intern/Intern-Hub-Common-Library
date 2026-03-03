@@ -59,6 +59,17 @@ tasks.test {
     useJUnitPlatform()
 }
 
+
+tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-parameters")
+}
+
+// Configure jar task to handle duplicate spring-configuration-metadata.json files
+tasks.named<org.gradle.jvm.tasks.Jar>("jar") {
+    // Set duplicate strategy to allow both auto-generated and additional metadata
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
 publishing {
     publications {
         register<MavenPublication>("gpr") {
