@@ -1,0 +1,117 @@
+{
+  "groups": [
+    {
+      "name": "common.context",
+      "description": "Configuration for the request context auto-configuration."
+    },
+    {
+      "name": "common.logging",
+      "type": "com.intern.hub.library.common.autoconfig.request.LoggingProperties",
+      "sourceType": "com.intern.hub.library.common.autoconfig.request.LoggingProperties",
+      "description": "Configuration for the request/response logging filter."
+    },
+    {
+      "name": "common.object-mapper",
+      "type": "com.intern.hub.library.common.autoconfig.objectmapper.ObjectMapperProperties",
+      "sourceType": "com.intern.hub.library.common.autoconfig.objectmapper.ObjectMapperProperties",
+      "description": "Configuration for the Jackson ObjectMapper auto-configuration."
+    },
+    {
+      "name": "snowflake",
+      "type": "com.intern.hub.library.common.autoconfig.snowflake.SnowflakeProperties",
+      "sourceType": "com.intern.hub.library.common.autoconfig.snowflake.SnowflakeProperties",
+      "description": "Configuration for the Snowflake distributed ID generator."
+    }
+  ],
+  "properties": [
+    {
+      "name": "common.context.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether to enable the ContextAutoConfiguration that registers the ContextFilter for automatic request context setup. Disabling this means X-Request-ID header parsing and RequestContext population will not happen automatically.",
+      "defaultValue": true
+    },
+    {
+      "name": "common.logging.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether to enable the RequestLoggingAutoConfiguration entirely. Set to false to prevent the RequestLoggingFilter from being registered, regardless of other logging settings.",
+      "defaultValue": true
+    },
+    {
+      "name": "common.logging.request",
+      "type": "java.lang.Boolean",
+      "description": "Whether to log the JSON request body. Only effective for requests with Content-Type application/json. Request bodies are capped at 8192 bytes.",
+      "defaultValue": false
+    },
+    {
+      "name": "common.logging.response",
+      "type": "java.lang.Boolean",
+      "description": "Whether to log the JSON response body. Only effective for responses with Content-Type application/json.",
+      "defaultValue": false
+    },
+    {
+      "name": "common.logging.header",
+      "type": "java.lang.Boolean",
+      "description": "Whether to log the incoming request headers. Headers listed under mask-headers will have their values replaced with ******.",
+      "defaultValue": false
+    },
+    {
+      "name": "common.logging.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "URL path patterns to exclude from logging. Supports Ant-style wildcards (e.g. /api/health/**, /actuator/**).",
+      "defaultValue": []
+    },
+    {
+      "name": "common.logging.mask-headers",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Case-insensitive list of request header names whose values are replaced with ****** in the log output.",
+      "defaultValue": ["authorization", "cookie", "set-cookie"]
+    },
+    {
+      "name": "common.logging.mask-fields",
+      "type": "java.util.List<java.lang.String>",
+      "description": "JSON field names whose values are replaced with ****** in the logged request and response bodies.",
+      "defaultValue": ["password", "accessToken", "refreshToken"]
+    },
+    {
+      "name": "common.object-mapper.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether to enable the ObjectMapperAutoConfiguration. When disabled, no ObjectMapper bean is created by this library. Useful when you want to provide your own fully custom ObjectMapper.",
+      "defaultValue": true
+    },
+    {
+      "name": "common.object-mapper.serialize-long-as-string",
+      "type": "java.lang.Boolean",
+      "description": "Whether to serialize Long, long primitive, and BigInteger values as JSON strings instead of JSON numbers. Recommended for APIs consumed by JavaScript clients that cannot safely represent 64-bit integers.",
+      "defaultValue": true
+    },
+    {
+      "name": "snowflake.machine-id",
+      "type": "java.lang.Long",
+      "description": "Unique machine identifier used for Snowflake ID generation. Must be unique across all running instances in a distributed deployment. Valid range: 0 to 1023.",
+      "defaultValue": 1
+    }
+  ],
+  "hints": [
+    {
+      "name": "common.logging.mask-headers",
+      "values": [
+        { "value": "authorization",   "description": "Bearer / Basic authorization header." },
+        { "value": "cookie",          "description": "Cookie header containing session tokens." },
+        { "value": "set-cookie",      "description": "Set-Cookie response header." },
+        { "value": "x-api-key",       "description": "API key header." }
+      ]
+    },
+    {
+      "name": "common.logging.mask-fields",
+      "values": [
+        { "value": "password",        "description": "User password field." },
+        { "value": "accessToken",     "description": "OAuth2 / JWT access token." },
+        { "value": "refreshToken",    "description": "OAuth2 refresh token." },
+        { "value": "cardNumber",      "description": "Payment card number." },
+        { "value": "cvv",             "description": "Payment card CVV." },
+        { "value": "secret",          "description": "Generic secret field." }
+      ]
+    }
+  ]
+}
+

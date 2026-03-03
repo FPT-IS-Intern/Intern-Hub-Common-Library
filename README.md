@@ -4,7 +4,7 @@ A shared Java library providing common utilities, exception handling, and contex
 
 [![Java Version](https://img.shields.io/badge/Java-25-blue.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-green.svg)](https://spring.io/projects/spring-boot)
-[![Version](https://img.shields.io/badge/Version-2.0.8-orange.svg)](https://jitpack.io)
+[![Version](https://img.shields.io/badge/Version-2.0.9-orange.svg)](https://jitpack.io)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
 > [!CAUTION]
@@ -179,7 +179,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.8")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.9")
 }
 ```
 
