@@ -4,7 +4,7 @@ A shared Java library providing common utilities, exception handling, and contex
 
 [![Java Version](https://img.shields.io/badge/Java-25-blue.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-green.svg)](https://spring.io/projects/spring-boot)
-[![Version](https://img.shields.io/badge/Version-2.0.5-orange.svg)](https://jitpack.io)
+[![Version](https://img.shields.io/badge/Version-2.0.7-orange.svg)](https://jitpack.io)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
 > [!CAUTION]
@@ -133,10 +133,12 @@ A shared Java library providing common utilities, exception handling, and contex
   - [Request Context Management](#request-context-management)
   - [Request / Response Logging](#request--response-logging)
   - [Snowflake ID Generator](#snowflake-id-generator)
+  - [ObjectMapper Auto-Configuration](#objectmapper-auto-configuration)
   - [Utility Classes](#utility-classes)
   - [Standard API Response](#standard-api-response)
   - [Pagination Model](#pagination-model)
 - [Configuration](#configuration)
+  - [IDE Configuration Metadata](#ide-configuration-metadata)
   - [Disabling Auto-Configurations](#disabling-auto-configurations)
   - [Using Request Context](#using-request-context)
 - [Usage Examples](#usage-examples)
@@ -177,7 +179,7 @@ Add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.5")
+    implementation("com.github.FPT-IS-Intern:Intern-Hub-Common-Library:2.0.7")
 }
 ```
 
@@ -399,6 +401,71 @@ public class MyService {
 - **Timestamp**: Milliseconds since custom epoch (default: Jan 1, 2025)
 - **Machine ID**: 0-1023 (must be unique per instance)
 - **Sequence**: 0-4095 (allows 4096 IDs per millisecond per machine)
+
+### ObjectMapper Auto-Configuration
+
+The library registers a production-ready Jackson `ObjectMapper` bean through `ObjectMapperAutoConfiguration`. It is auto-configured with sensible defaults and is opt-out — if your application already defines an `ObjectMapper` bean, this one is skipped.
+
+#### Defaults Applied
+
+| Behaviour | Default |
+| --------- | ------- |
+| `FAIL_ON_UNKNOWN_PROPERTIES` | Disabled — unknown JSON fields are silently ignored |
+| `FAIL_ON_NULL_FOR_PRIMITIVES` | Disabled — `null` values for primitives are tolerated |
+| Module discovery | All Jackson modules on the classpath are auto-registered via `findAndAddModules()` |
+| Long / BigInteger serialization | Serialized as **JSON strings** to preserve precision in JavaScript clients |
+
+#### Why Serialize `Long` as String?
+
+JavaScript's `number` type is a 64-bit IEEE 754 double, which can only represent integers exactly up to 2<sup>53</sup>. Snowflake IDs and other 64-bit `long` values often exceed this limit, causing silent data corruption in browsers and Node.js clients. Emitting them as strings avoids this issue while remaining fully deserializable on the Java side.
+
+```json
+// With serialize-long-as-string: true  (default)
+{ "id": "748179641395347456", "userId": "1234567890123456789" }
+
+// With serialize-long-as-string: false
+{ "id": 748179641395347456, "userId": 1234567890123456789 }
+```
+
+#### Configuration
+
+```yaml
+common:
+  object-mapper:
+    enabled: true                   # set to false to disable this auto-configuration entirely
+    serialize-long-as-string: true  # serialize Long / BigInteger as JSON string (default: true)
+```
+
+#### Disabling the Auto-Configuration
+
+If your application needs a custom `ObjectMapper`, simply declare a bean — this auto-configuration is skipped automatically via `@ConditionalOnMissingBean`:
+
+```java
+@Bean
+public ObjectMapper objectMapper() {
+    // your custom configuration
+    return JsonMapper.builder()
+            .enable(SerializationFeature.INDENT_OUTPUT)
+            .build();
+}
+```
+
+Or disable via property:
+
+```yaml
+common:
+  object-mapper:
+    enabled: false
+```
+
+Or via Spring exclusion:
+
+```yaml
+spring:
+  autoconfigure:
+    exclude:
+      - com.intern.hub.library.common.autoconfig.objectmapper.ObjectMapperAutoConfiguration
+```
 
 ### Utility Classes
 
@@ -758,8 +825,8 @@ PaginatedData<String> pageableSet = PaginatedData.<String>builder()
 snowflake:
   machine-id: 1 # Required for distributed deployments (0-1023)
 
-# Request Context auto-configuration toggle (default: true)
 common:
+  # Request Context auto-configuration toggle (default: true)
   context:
     enabled: true
 
@@ -778,9 +845,24 @@ common:
       - accessToken
       - refreshToken
 
+  # Jackson ObjectMapper auto-configuration
+  object-mapper:
+    enabled: true                   # set to false to disable the auto-configuration entirely
+    serialize-long-as-string: true  # serialize Long / BigInteger as JSON string (default: true)
+
 # JVM timezone (for DateTimeHelper)
 # Set via: -Duser.timezone=America/New_York
 ```
+
+### IDE Configuration Metadata
+
+The library ships an `additional-spring-configuration-metadata.json` file located at:
+
+```
+src/main/resources/META-INF/additional-spring-configuration-metadata.json
+```
+
+This file provides full IDE auto-completion and documentation for all `common.*` and `snowflake.*` configuration properties in IntelliJ IDEA, VS Code (with the Spring Boot extension), and any other editor that consumes Spring configuration metadata.
 
 ### Spring Boot Auto-Configuration
 
@@ -789,6 +871,7 @@ The library registers the following auto-configurations:
 - `SnowflakeAutoConfiguration` — Automatically creates a `Snowflake` bean (skipped if a `Snowflake` bean already exists)
 - `ContextAutoConfiguration` — Automatically registers a `ContextFilter` for Request Context management (servlet applications only)
 - `RequestLoggingAutoConfiguration` — Automatically registers a `RequestLoggingFilter` for structured request/response logging (servlet applications only; all logging disabled by default)
+- `ObjectMapperAutoConfiguration` — Automatically creates a pre-configured `ObjectMapper` bean (skipped if an `ObjectMapper` bean already exists)
 
 To see the auto-configuration file location:
 
@@ -815,6 +898,7 @@ spring:
       - com.intern.hub.library.common.autoconfig.snowflake.SnowflakeAutoConfiguration
       - com.intern.hub.library.common.autoconfig.context.ContextAutoConfiguration
       - com.intern.hub.library.common.autoconfig.request.RequestLoggingAutoConfiguration
+      - com.intern.hub.library.common.autoconfig.objectmapper.ObjectMapperAutoConfiguration
 ```
 
 #### Using `@SpringBootApplication` Annotation
@@ -823,7 +907,8 @@ spring:
 @SpringBootApplication(exclude = {
     SnowflakeAutoConfiguration.class,
     ContextAutoConfiguration.class,
-    RequestLoggingAutoConfiguration.class
+    RequestLoggingAutoConfiguration.class,
+    ObjectMapperAutoConfiguration.class
 })
 public class MyApplication {
     public static void main(String[] args) {
@@ -834,13 +919,14 @@ public class MyApplication {
 
 #### Available Auto-Configurations
 
-| Auto-Configuration                | Description                                                                         | When to Disable                                                                                     |
-| --------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `SnowflakeAutoConfiguration`      | Creates a `Snowflake` bean for ID generation                                        | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy        |
-| `ContextAutoConfiguration`        | Registers `ContextFilter` for automatic Request Context setup                       | When you have a custom context filter or don't need Request Context tracking                        |
-| `RequestLoggingAutoConfiguration` | Registers `RequestLoggingFilter` for structured JSON request/response body logging  | When you have a custom logging filter or want to disable logging infrastructure completely          |
+| Auto-Configuration                | Description                                                                                              | When to Disable                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `SnowflakeAutoConfiguration`      | Creates a `Snowflake` bean for ID generation                                                             | When you want to provide a custom `Snowflake` bean or use a different ID generation strategy        |
+| `ContextAutoConfiguration`        | Registers `ContextFilter` for automatic Request Context setup                                            | When you have a custom context filter or don't need Request Context tracking                        |
+| `RequestLoggingAutoConfiguration` | Registers `RequestLoggingFilter` for structured JSON request/response body logging                       | When you have a custom logging filter or want to disable logging infrastructure completely          |
+| `ObjectMapperAutoConfiguration`   | Creates a pre-configured `ObjectMapper` bean with sensible JSON serialization defaults                   | When you provide your own `ObjectMapper` bean or need full control over Jackson configuration        |
 
-> **Note**: `ContextAutoConfiguration` and `RequestLoggingAutoConfiguration` only activate for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`). `ContextAutoConfiguration` also checks `common.context.enabled` and `RequestLoggingAutoConfiguration` checks `common.logging.enabled` (both default to `true`).
+> **Note**: `ContextAutoConfiguration` and `RequestLoggingAutoConfiguration` only activate for servlet-based web applications (`@ConditionalOnWebApplication(type = SERVLET)`). `ContextAutoConfiguration` also checks `common.context.enabled`, `RequestLoggingAutoConfiguration` checks `common.logging.enabled`, and `ObjectMapperAutoConfiguration` checks `common.object-mapper.enabled` (all default to `true`).
 
 ### Using Request Context
 

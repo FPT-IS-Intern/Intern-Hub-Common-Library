@@ -94,7 +94,13 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
       filterChain.doFilter(request, response);
       return;
     }
+
     String uri = request.getRequestURI();
+    if(loggingProperties.getExcludePaths().stream().anyMatch(uri::startsWith)) {
+      filterChain.doFilter(request, response);
+      return;
+    }
+
     String method = request.getMethod();
     String requestId = RequestContextHolder.get().requestId();
     ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request, 8192);

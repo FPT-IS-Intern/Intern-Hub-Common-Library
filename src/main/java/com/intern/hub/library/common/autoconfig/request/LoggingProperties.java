@@ -52,6 +52,10 @@ public class LoggingProperties {
   private boolean header = false;
 
   /**
+   * List of URL paths to exclude from logging. Matching is done using simple path patterns (e.g. {@code /api/auth/**}).
+   */
+  private List<String> excludePaths = new ArrayList<>();
+  /**
    * Header names whose values will be masked in the log output.
    * Matching is case-insensitive.
    * Defaults to {@code [authorization, cookie, set-cookie]}.
