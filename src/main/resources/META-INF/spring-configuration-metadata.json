@@ -90,28 +90,6 @@
       "description": "Unique machine identifier used for Snowflake ID generation. Must be unique across all running instances in a distributed deployment. Valid range: 0 to 1023.",
       "defaultValue": 1
     }
-  ],
-  "hints": [
-    {
-      "name": "common.logging.mask-headers",
-      "values": [
-        { "value": "authorization",   "description": "Bearer / Basic authorization header." },
-        { "value": "cookie",          "description": "Cookie header containing session tokens." },
-        { "value": "set-cookie",      "description": "Set-Cookie response header." },
-        { "value": "x-api-key",       "description": "API key header." }
-      ]
-    },
-    {
-      "name": "common.logging.mask-fields",
-      "values": [
-        { "value": "password",        "description": "User password field." },
-        { "value": "accessToken",     "description": "OAuth2 / JWT access token." },
-        { "value": "refreshToken",    "description": "OAuth2 refresh token." },
-        { "value": "cardNumber",      "description": "Payment card number." },
-        { "value": "cvv",             "description": "Payment card CVV." },
-        { "value": "secret",          "description": "Generic secret field." }
-      ]
-    }
   ]
 }
 
