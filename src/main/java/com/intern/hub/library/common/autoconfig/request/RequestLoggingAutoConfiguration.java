@@ -1,8 +1,8 @@
 package com.intern.hub.library.common.autoconfig.request;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -96,9 +96,17 @@ public class RequestLoggingAutoConfiguration {
     return registrationBean;
   }
 
+  /**
+   * Creates the {@link RequestLoggingFilter} bean using the application's configured
+   * {@link ObjectMapper}. The bean is only created when a {@link ObjectMapper} bean
+   * is present in the application context (provided automatically by Spring Boot's
+   * Jackson auto-configuration).
+   *
+   * @return a configured {@link RequestLoggingFilter}
+   */
   @Bean
-  public RequestLoggingFilter requestLoggingFilter(LoggingProperties loggingProperties, ObjectProvider<ObjectMapper> objectMapperProvider) {
-    ObjectMapper objectMapper = objectMapperProvider.getIfAvailable(ObjectMapper::new);
+  @ConditionalOnBean(ObjectMapper.class)
+  public RequestLoggingFilter requestLoggingFilter(LoggingProperties loggingProperties, ObjectMapper objectMapper) {
     log.info("RequestLoggingFilter is enabled with properties: request={}, response={}, header={}, maskHeaders={}, maskFields={}",
         loggingProperties.isRequest(), loggingProperties.isResponse(), loggingProperties.isHeader(),
         loggingProperties.getMaskHeaders(), loggingProperties.getMaskFields());

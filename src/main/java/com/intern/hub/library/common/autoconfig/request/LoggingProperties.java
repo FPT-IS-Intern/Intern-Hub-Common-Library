@@ -52,9 +52,18 @@ public class LoggingProperties {
   private boolean header = false;
 
   /**
-   * List of URL paths to exclude from logging. Matching is done using simple path patterns (e.g. {@code /api/auth/**}).
+   * List of URL path patterns to exclude from logging.
+   * Patterns follow Ant-style syntax (e.g. {@code /api/auth/**}, {@code /actuator/*}).
+   * Matching is performed by {@link org.springframework.util.AntPathMatcher}.
    */
   private List<String> excludePaths = new ArrayList<>();
+
+  /**
+   * Maximum number of bytes to cache from the request body for logging.
+   * Requests larger than this limit will have their body truncated in the log output;
+   * the downstream handler always receives the full body. Defaults to {@code 8192} (8 KB).
+   */
+  private int maxBodyBytes = 8192;
   /**
    * Header names whose values will be masked in the log output.
    * Matching is case-insensitive.

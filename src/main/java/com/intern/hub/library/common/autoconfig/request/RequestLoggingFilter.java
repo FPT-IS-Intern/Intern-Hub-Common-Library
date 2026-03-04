@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.core.Ordered;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
 
 /**
  * Servlet filter that logs HTTP request headers, request bodies, and response bodies
- * for {@code application/json} content-type requests.
+ * for {@code application/json} and {@code text/*} content-type requests.
  *
  * <p>
  * Logging is controlled by {@link LoggingProperties}. By default all logging is
@@ -56,16 +57,13 @@ import java.util.stream.Collectors;
  * logging occurs.
  * </p>
  *
- * <p>
- * Requests with a content-type other than {@code application/json} pass through
- * without any buffering or logging.
- * </p>
- *
  * @see LoggingProperties
  * @see RequestLoggingAutoConfiguration
  */
 @Slf4j
 public class RequestLoggingFilter extends OncePerRequestFilter implements Ordered {
+
+  private static final AntPathMatcher ANT_PATH_MATCHER = new AntPathMatcher();
 
   private final LoggingProperties loggingProperties;
   private final ObjectMapper objectMapper;
@@ -86,61 +84,104 @@ public class RequestLoggingFilter extends OncePerRequestFilter implements Ordere
   protected void doFilterInternal(@NonNull HttpServletRequest request,
                                   @NonNull HttpServletResponse response,
                                   @NonNull FilterChain filterChain) throws ServletException, IOException {
-    String contentType = request.getContentType();
     if (!loggingProperties.isRequest() &&
         !loggingProperties.isHeader() &&
-        !loggingProperties.isResponse() &&
-        (contentType != null && !contentType.toLowerCase().startsWith("application/json"))) {
+        !loggingProperties.isResponse()) {
       filterChain.doFilter(request, response);
       return;
     }
 
     String uri = request.getRequestURI();
-    if(loggingProperties.getExcludePaths().stream().anyMatch(uri::startsWith)) {
+    if (loggingProperties.getExcludePaths().stream().anyMatch(pattern -> ANT_PATH_MATCHER.match(pattern, uri))) {
       filterChain.doFilter(request, response);
       return;
     }
 
-    String method = request.getMethod();
-    String requestId = RequestContextHolder.get().requestId();
-    ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request, 8192);
-    ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
+    ContentCachingRequestWrapper wrappedRequest = null;
+    if (loggingProperties.isRequest()) {
+      wrappedRequest = new ContentCachingRequestWrapper(request, loggingProperties.getMaxBodyBytes());
+    }
+    ContentCachingResponseWrapper wrappedResponse = null;
+    if (loggingProperties.isResponse()) {
+      wrappedResponse = new ContentCachingResponseWrapper(response);
+    }
+
     try {
-      filterChain.doFilter(wrappedRequest, wrappedResponse);
+      filterChain.doFilter(wrappedRequest != null ? wrappedRequest : request, wrappedResponse != null ? wrappedResponse : response);
     } finally {
-      try {
-        if (loggingProperties.isHeader()) {
-          StringBuilder headers = new StringBuilder();
-          request.getHeaderNames().asIterator().forEachRemaining(headerName -> {
-            if (maskHeaders.contains(headerName.toLowerCase())) {
-              headers.append(headerName).append("=******; ");
-            } else {
-              String headerValue = request.getHeader(headerName);
-              headers.append(headerName).append("=").append(headerValue).append("; ");
-            }
-          });
-          log.info("Headers: method={}, uri={}, requestId={}, headers={}", method, uri, requestId, headers);
+      log(request, wrappedRequest, wrappedResponse);
+      wrappedRequest = null; // help GC
+      wrappedResponse = null; // help GC
+    }
+  }
+
+  /**
+   * Logs headers/request/response and ensures the buffered response body is always
+   * flushed back to the client. This method intentionally swallows all exceptions so
+   * that a logging failure never masks a real downstream exception.
+   */
+  private void log(HttpServletRequest request,
+                   ContentCachingRequestWrapper wrappedRequest,
+                   ContentCachingResponseWrapper wrappedResponse) {
+    try {
+      if (loggingProperties.isHeader()) logHeaders(request);
+      if (loggingProperties.isRequest()) {
+        String requestContentType = request.getContentType() != null ? request.getContentType().toLowerCase() : "";
+        logRequest(request, wrappedRequest, requestContentType);
+      }
+      if (loggingProperties.isResponse()) logResponse(request, wrappedResponse);
+    } catch (Exception e) {
+      log.warn("Failed to log request/response: {}", e.getMessage());
+    } finally {
+      if (wrappedResponse != null) {
+        try {
+          wrappedResponse.copyBodyToResponse();
+        } catch (IOException e) {
+          log.warn("Failed to copy response body to client: {}", e.getMessage());
         }
-        if (loggingProperties.isRequest()) {
-          String requestBody = maskJson(new String(wrappedRequest.getContentAsByteArray(), StandardCharsets.UTF_8));
-          log.info("Request: method={}, uri={}, requestId={}, body={}", method, uri, requestId, requestBody);
-        }
-        if (loggingProperties.isResponse()) {
-          String responseContentType = wrappedResponse.getContentType();
-          int status = wrappedResponse.getStatus();
-          if (responseContentType != null && responseContentType.toLowerCase().startsWith("application/json")) {
-            String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), StandardCharsets.UTF_8));
-            log.info("Response: method={}, uri={}, requestId={}, status={}, body={}", method, uri, requestId, status, responseBody);
-          } else {
-            log.info("Response: method={}, uri={}, requestId={}, status={}", method, uri, requestId, status);
-          }
-        }
-      } catch (Exception e) {
-        log.warn("Failed to log request/response: {}", e.getMessage());
-      } finally {
-        wrappedResponse.copyBodyToResponse();
       }
     }
+  }
+
+  private void logHeaders(HttpServletRequest request) {
+    String requestId = RequestContextHolder.get().requestId();
+    StringJoiner headers = new StringJoiner(", ");
+    request.getHeaderNames().asIterator().forEachRemaining(headerName -> {
+      if (maskHeaders.contains(headerName.toLowerCase())) {
+        headers.add(headerName + "=******");
+      } else {
+        headers.add(headerName + "=" + request.getHeader(headerName));
+      }
+    });
+    log.info("Headers: method={}, uri={}, requestId={}, headers={}", request.getMethod(), request.getRequestURI(), requestId, headers);
+  }
+
+  private void logRequest(HttpServletRequest request, ContentCachingRequestWrapper wrappedRequest, String contentType) {
+    String requestId = RequestContextHolder.get().requestId();
+    if (contentType.startsWith("application/json") || contentType.startsWith("text/")) {
+      byte[] body = wrappedRequest.getContentAsByteArray();
+      String requestBody = maskJson(new String(body, StandardCharsets.UTF_8));
+      if (body.length >= loggingProperties.getMaxBodyBytes()) {
+        log.info("Request: method={}, uri={}, requestId={}, body={} [TRUNCATED at {} bytes]",
+            request.getMethod(), request.getRequestURI(), requestId, requestBody, loggingProperties.getMaxBodyBytes());
+      } else {
+        log.info("Request: method={}, uri={}, requestId={}, body={}", request.getMethod(), request.getRequestURI(), requestId, requestBody);
+      }
+      return;
+    }
+    log.info("Request: method={}, uri={}, requestId={}", request.getMethod(), request.getRequestURI(), requestId);
+  }
+
+  private void logResponse(HttpServletRequest request, ContentCachingResponseWrapper wrappedResponse) {
+    String requestId = RequestContextHolder.get().requestId();
+    int status = wrappedResponse.getStatus();
+    String responseContentType = wrappedResponse.getContentType() != null ? wrappedResponse.getContentType().toLowerCase() : "";
+    if (responseContentType.startsWith("application/json") || responseContentType.startsWith("text/")) {
+      String responseBody = maskJson(new String(wrappedResponse.getContentAsByteArray(), StandardCharsets.UTF_8));
+      log.info("Response: method={}, uri={}, requestId={}, status={}, body={}", request.getMethod(), request.getRequestURI(), requestId, status, responseBody);
+      return;
+    }
+    log.info("Response: method={}, uri={}, requestId={}, status={}", request.getMethod(), request.getRequestURI(), requestId, status);
   }
 
   @Override
