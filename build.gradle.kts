@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "2.1.1"
+version = "2.1.2"
 description = "common"
 
 java {
@@ -39,6 +39,7 @@ dependencies {
     api("org.springframework.boot:spring-boot-autoconfigure")
     api("org.springframework:spring-context")
     api("tools.jackson.core:jackson-databind:3.1.0")
+    api("tools.jackson.core:jackson-core:3.1.0")
 
     api("io.opentelemetry:opentelemetry-api")
     api("org.springframework.boot:spring-boot-starter-opentelemetry")
