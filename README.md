@@ -4,7 +4,7 @@ A shared Java library providing common utilities, exception handling, and contex
 
 [![Java Version](https://img.shields.io/badge/Java-25-blue.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-green.svg)](https://spring.io/projects/spring-boot)
-[![Version](https://img.shields.io/badge/Version-2.0.9-orange.svg)](https://jitpack.io)
+[![Version](https://img.shields.io/badge/Version-2.1.3-orange.svg)](https://jitpack.io)
 [![License](https://img.shields.io/badge/License-See%20LICENSE-blue.svg)](LICENSE)
 
 > [!CAUTION]
@@ -123,6 +123,23 @@ A shared Java library providing common utilities, exception handling, and contex
 >
 > **Migration**: If your clients check `"status": null` for success detection, update them to check `"status.code": "success"` or use `ResponseApi.ok(data, metaData)`.
 
+> [!NOTE]
+>
+> ## New in v2.1.3 — `@SnowflakeGeneratedId` Hibernate Annotation
+>
+> A new `@SnowflakeGeneratedId` annotation is available for JPA entities. Place it on any `@Id Long` field and Hibernate will automatically generate a Snowflake ID on `INSERT` — no manual `snowflake.next()` call required.
+>
+> ```java
+> @Entity
+> public class Order {
+>     @Id
+>     @SnowflakeGeneratedId
+>     private Long id;
+> }
+> ```
+>
+> See [**`@SnowflakeGeneratedId` Annotation**](#snowflakegeneratedid-annotation) for full details.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -133,6 +150,7 @@ A shared Java library providing common utilities, exception handling, and contex
   - [Request Context Management](#request-context-management)
   - [Request / Response Logging](#request--response-logging)
   - [Snowflake ID Generator](#snowflake-id-generator)
+    - [@SnowflakeGeneratedId Annotation](#snowflakegeneratedid-annotation)
   - [ObjectMapper Auto-Configuration](#objectmapper-auto-configuration)
   - [Utility Classes](#utility-classes)
   - [Standard API Response](#standard-api-response)
@@ -154,6 +172,7 @@ This library provides essential building blocks for building robust Spring Boot 
 - **Request Context Management**: Thread-safe request context using Java's `ScopedValue`
 - **Request / Response Logging**: Structured, opt-in logging of JSON request/response bodies and headers with automatic sensitive-field masking
 - **Snowflake ID Generator**: Distributed unique ID generation
+- **`@SnowflakeGeneratedId`**: Hibernate annotation that auto-generates Snowflake IDs on entity persist — no manual `id` assignment needed
 - **Utility Classes**: Date/time helpers and random generators
 
 ## Requirements
@@ -401,6 +420,64 @@ public class MyService {
 - **Timestamp**: Milliseconds since custom epoch (default: Jan 1, 2025)
 - **Machine ID**: 0-1023 (must be unique per instance)
 - **Sequence**: 0-4095 (allows 4096 IDs per millisecond per machine)
+
+### `@SnowflakeGeneratedId` Annotation
+
+Instead of calling `snowflake.next()` manually, annotate any JPA `@Id` field with `@SnowflakeGeneratedId`. Hibernate will invoke `SnowflakeIdGenerator` automatically the first time the entity is persisted — no manual ID assignment is needed.
+
+> **Requirement**: `SnowflakeAutoConfiguration` must be active (or you must provide a `Snowflake` bean) before any entity is saved, so the generator is wired up at startup.
+
+#### Entity Example
+
+```java
+import com.intern.hub.library.common.annotation.SnowflakeGeneratedId;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+
+@Entity
+public class Order {
+
+    @Id
+    @SnowflakeGeneratedId
+    private Long id;
+
+    private String status;
+
+    // getters / setters …
+}
+```
+
+#### Persisting the Entity
+
+```java
+@Service
+public class OrderService {
+
+    private final OrderRepository orderRepository;
+
+    public Order createOrder(CreateOrderRequest request) {
+        Order order = new Order();
+        order.setStatus(request.status());
+        // No order.setId(...) needed — Hibernate generates it via @SnowflakeGeneratedId
+        return orderRepository.save(order);
+    }
+}
+```
+
+#### How It Works
+
+| Component | Role |
+|-----------|------|
+| `@SnowflakeGeneratedId` | Meta-annotation wrapping Hibernate's `@IdGeneratorType` to bind the generator to the field |
+| `SnowflakeIdGenerator` | `BeforeExecutionGenerator` instantiated by Hibernate on schema bootstrap; fires only on `INSERT` |
+| `SnowflakeAutoConfiguration` | Calls `SnowflakeIdGenerator.configure(snowflake)` after creating the `Snowflake` bean, wiring the two together |
+
+#### Comparing Approaches
+
+| Approach | When to Use |
+|----------|-------------|
+| `@SnowflakeGeneratedId` | JPA/Hibernate entities — clean, zero boilerplate |
+| `snowflake.next()` | Non-entity IDs, caching keys, batch generation, or any non-JPA context |
 
 ### ObjectMapper Auto-Configuration
 
@@ -1107,13 +1184,27 @@ public class OrderService {
         this.orderRepository = orderRepository;
     }
 
-    public Order createOrder(Long userId, CreateOrderRequest request) {
+    // ── Programmatic approach (non-entity / non-JPA use cases) ───────────────
+    public Long generateCacheKey() {
+        return snowflake.next();
+    }
+
+    // ── Programmatic approach for entities (manual assignment) ────────────────
+    public Order createOrderManual(Long userId, CreateOrderRequest request) {
         Order order = new Order();
-        order.setId(snowflake.next());
+        order.setId(snowflake.next());          // assign explicitly
         order.setUserId(userId);
         order.setCreatedAt(DateTimeHelper.currentTimeMillis());
-
         return orderRepository.save(order);
+    }
+
+    // ── Annotation-based approach (@SnowflakeGeneratedId on the @Id field) ───
+    // No manual id assignment; Hibernate calls SnowflakeIdGenerator on INSERT.
+    public Order createOrder(Long userId, CreateOrderRequest request) {
+        Order order = new Order();              // id is null here …
+        order.setUserId(userId);
+        order.setCreatedAt(DateTimeHelper.currentTimeMillis());
+        return orderRepository.save(order);    // … and populated automatically
     }
 
     public Order getOrder(Long orderId) {

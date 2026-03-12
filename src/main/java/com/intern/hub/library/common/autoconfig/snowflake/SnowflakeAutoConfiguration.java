@@ -1,5 +1,6 @@
 package com.intern.hub.library.common.autoconfig.snowflake;
 
+import com.intern.hub.library.common.id.SnowflakeIdGenerator;
 import com.intern.hub.library.common.utils.Snowflake;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -53,7 +54,9 @@ public class SnowflakeAutoConfiguration {
   @Bean
   @ConditionalOnMissingBean(Snowflake.class)
   public Snowflake snowflake(SnowflakeProperties properties) {
-    return new Snowflake(properties.getMachineId());
+    Snowflake instance = new Snowflake(properties.getMachineId());
+    SnowflakeIdGenerator.configure(instance);
+    return instance;
   }
 
 }

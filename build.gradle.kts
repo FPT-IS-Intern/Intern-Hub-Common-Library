@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.intern.hub.library"
-version = "2.1.2"
+version = "2.1.3"
 description = "common"
 
 java {
@@ -49,6 +49,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api")
     implementation("jakarta.servlet:jakarta.servlet-api")
     implementation("org.springframework:spring-webmvc")
+    implementation("org.hibernate.orm:hibernate-core")
 
     testImplementation(platform("org.junit:junit-bom:5.12.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
